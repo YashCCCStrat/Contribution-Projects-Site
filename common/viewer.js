@@ -467,7 +467,12 @@ $('bChg').onclick = () => {   // edits + added features, for gis/edit/inbox/ (ap
   Object.entries(EDITS).forEach(([rid, e0]) => { const row = ROWS.find(r => r.rid === rid), e = Object.fromEntries(Object.entries(e0).filter(([k]) => canEdit(row, k))); if (!NEW.some(n => n.rid === rid) && Object.keys(e).length) out.push({type: 'Feature', geometry: null, properties: {change: 'edit', area: rid.split(':')[0], rid: strip(rid), ...e}}); });
   if (!out.length) return alert('No edits or added features yet.');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify({type: 'FeatureCollection', features: out}, null, 1)], {type: 'application/geo+json'}));
-  a.download = `changes-${today}.geojson`; a.click(); alert(`${out.length} changes saved. Put the file in gis/edit/inbox/ in your copy of the repository and push it (GitHub Desktop): the repository applies them and rebuilds the app.`);
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-') + '-' + Math.random().toString(36).slice(2, 6);   // unique: two people saving the same day do not collide
+  a.download = `changes-${stamp}.geojson`; a.click();
+  const site = /github\.io$/.test(location.hostname);   // the public website: visitors cannot push to the repository
+  alert(`${out.length} changes saved in ${a.download}. ` + (site
+    ? 'Send this file to the project owner (it holds only your status / land-acquired notes and any features you drew). Your changes stay in this browser; the website is not changed until the owner applies the file.'
+    : 'Put the file in gis/edit/inbox/ in your copy of the repository and push it (GitHub Desktop): the repository applies them and rebuilds the app.'));
 };
 window.APP = {map, select, get READY() { return READY; }, get SEL() { return SEL; }, FBYKEY, AON, IMGON, MAPON, applyVis};
 applyVis();
