@@ -18,5 +18,5 @@ open data, and reviewed by the owner.
 - Vicmap Planning overlays and Vicmap Property parcels: © State of Victoria (Department of Transport and Planning), CC BY 4.0.
 - VPA precinct boundaries and Future Urban Structure land use: Victorian Planning Authority, CC BY 4.0.
 - Roads: Overture Maps Foundation, including © OpenStreetMap contributors, ODbL 1.0.
-- Imagery basemap: Esri World Imagery (loaded at view time, not redistributed).
+- Basemaps: Esri World Imagery, World Street Map and the World Transportation / World Boundaries and Places reference overlays (loaded at view time, not redistributed; attribution shown on the map).
 - Libraries: MapLibre GL JS (BSD-3-Clause), SheetJS Community Edition (Apache-2.0), Turf.js (MIT); licence files in `common/vendor/`.

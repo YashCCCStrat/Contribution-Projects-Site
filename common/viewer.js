@@ -70,7 +70,7 @@ document.body.innerHTML = `
 <div id="wrap">
   <div id="map">
     <aside id="panel" class="card"><div class="hd" id="phd"><span>Plan maps &amp; layers</span><span class="chev">▾</span></div><div class="bd">
-      <div class="row" style="margin-top:8px"><span class="muted" style="width:70px">Basemap</span><select id="base" style="flex:1"><option value="imagery">Imagery</option><option value="streets">Streets</option><option value="none">None</option></select></div>
+      <div class="row" style="margin-top:8px"><span class="muted" style="width:70px">Basemap</span><select id="base" style="flex:1"><option value="imagery">Imagery</option><option value="hybrid">Imagery + street names</option><option value="streets">Streets</option><option value="none">None</option></select></div>
       <div class="row" style="margin-top:8px"><span class="muted" style="width:70px" title="Transparency of the printed plans: 0% = solid, 100% = invisible">Transparency</span><input type="range" id="opac" min="0" max="95" value="35"><span id="opacV" style="width:34px;text-align:right">35%</span></div>
       <div id="lyr"></div>
       <label class="lyr" style="margin-top:8px"><input type="checkbox" id="lblOn" checked> Project ID labels</label>
@@ -113,8 +113,12 @@ const ESRI = n => `https://server.arcgisonline.com/ArcGIS/rest/services/${n}/Map
 const map = new maplibregl.Map({container: 'map', attributionControl: {compact: true}, center: [145.33, -38.10], zoom: 13.5, maxZoom: 19,
   style: {version: 8, glyphs: 'glyphs://{fontstack}/{range}', sources: {
     imagery: {type: 'raster', tiles: [ESRI('World_Imagery')], tileSize: 256, maxzoom: 19, attribution: 'Esri World Imagery'},
-    streets: {type: 'raster', tiles: [ESRI('World_Street_Map')], tileSize: 256, maxzoom: 19, attribution: 'Esri, © OpenStreetMap contributors'}},
-    layers: [{id: 'bg', type: 'background', paint: {'background-color': '#eef0ec'}}, {id: 'imagery', type: 'raster', source: 'imagery'}, {id: 'streets', type: 'raster', source: 'streets', layout: {visibility: 'none'}}]}});
+    streets: {type: 'raster', tiles: [ESRI('World_Street_Map')], tileSize: 256, maxzoom: 19, attribution: 'Esri, © OpenStreetMap contributors'},
+    // "Imagery + street names": Esri's reference overlays (roads with names; suburbs and places) over the imagery, as in Esri's Hybrid basemap
+    roads: {type: 'raster', tiles: [ESRI('Reference/World_Transportation')], tileSize: 256, maxzoom: 19, attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors'},
+    places: {type: 'raster', tiles: [ESRI('Reference/World_Boundaries_and_Places')], tileSize: 256, maxzoom: 19, attribution: 'Esri'}},
+    layers: [{id: 'bg', type: 'background', paint: {'background-color': '#eef0ec'}}, {id: 'imagery', type: 'raster', source: 'imagery'}, {id: 'streets', type: 'raster', source: 'streets', layout: {visibility: 'none'}},
+      {id: 'roads', type: 'raster', source: 'roads', layout: {visibility: 'none'}}, {id: 'places', type: 'raster', source: 'places', layout: {visibility: 'none'}}]}});
 map.addControl(new maplibregl.NavigationControl({showCompass: false}), 'top-right');
 map.addControl(new maplibregl.ScaleControl({unit: 'metric'}), 'bottom-right');
 const canvasImage = (draw, w = 28, h = 28) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); return c.getContext('2d').getImageData(0, 0, w, h); };
@@ -221,7 +225,8 @@ $('opac').oninput = e => {
   if (![...IMGON].some(m => MAPON.has(m) && AON.has(m.split(':')[0]))) {   // nothing printed shown yet: show the first ticked plan of each area
     AREAS.filter(a => AON.has(a.id)).forEach(a => { const m = D.maps.find(x => x.area === a.id && MAPON.has(x.id) && D.images[x.id]); if (m) IMGON.add(m.id); }); applyVis(); }
   $('opacV').textContent = e.target.value + '%'; Object.keys(D.images).forEach(m => map.setPaintProperty('img-' + m, 'raster-opacity', 1 - e.target.value / 100)); };
-$('base').onchange = e => { vis('imagery', e.target.value === 'imagery'); vis('streets', e.target.value === 'streets'); };
+$('base').onchange = e => { const b = e.target.value; vis('imagery', b === 'imagery' || b === 'hybrid'); vis('streets', b === 'streets'); vis('roads', b === 'hybrid'); vis('places', b === 'hybrid'); store.set('cfb-base', b); };
+{ const b = store.get('cfb-base', 'imagery'); if ([...$('base').options].some(o => o.value === b) && b !== 'imagery') { $('base').value = b; map.once('load', () => $('base').onchange({target: $('base')})); } }   // remember the basemap
 function bboxOf(fs) { let b = [180, 90, -180, -90]; const w = c => typeof c[0] === 'number' ? (b = [Math.min(b[0], c[0]), Math.min(b[1], c[1]), Math.max(b[2], c[0]), Math.max(b[3], c[1])]) : c.forEach(w); fs.forEach(f => w(f.geometry.coordinates)); return b; }
 function fitAll() { if (!READY) return; const fs = D.features.filter(f => f.properties.key && AON.has(f.properties.area)); if (!fs.length) return; const b = bboxOf(fs); map.fitBounds([[b[0], b[1]], [b[2], b[3]]], {padding: {top: 40, bottom: 40, left: 320, right: 60}, duration: 500}); }
 
