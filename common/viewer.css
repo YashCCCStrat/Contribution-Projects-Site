@@ -131,11 +131,11 @@ body.editing td.edit input{border-color:var(--line);background:var(--panel)}
 #drawbar{top:12px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:5px 8px;flex-wrap:wrap;max-width:calc(100% - 440px)}
 #drawbar .dl{font-size:11px;color:var(--muted);font-weight:600;margin:0 2px 0 4px}
 #drawbar button{border:1px solid transparent;background:transparent;border-radius:7px;padding:4px 8px;cursor:pointer;font-weight:550}
-#drawbar button:hover{background:var(--soft)}#drawbar button.on{background:#e0218a;color:#fff}
+#drawbar button:hover{background:var(--soft)}#drawbar button.on{background:#00838f;color:#fff}
 #drawbar .sep{width:1px;height:20px;background:var(--line);margin:0 4px}
 #drawbar .buf{font-size:11.5px;color:var(--muted)}#drawbar .buf input{width:46px;border:1px solid var(--line);border-radius:6px;padding:2px 4px;background:var(--panel)}
-#drawbar .hint{font-size:11.5px;color:#e0218a;margin-left:4px}
-#shapechip{bottom:12px;left:50%;transform:translateX(-50%);padding:6px 6px 6px 12px;display:flex;gap:8px;align-items:center;border-color:#e0218a;font-weight:600}
+#drawbar .hint{font-size:11.5px;color:#00838f;margin-left:4px}
+#shapechip{bottom:12px;left:50%;transform:translateX(-50%);padding:6px 6px 6px 12px;display:flex;gap:8px;align-items:center;border-color:#00b8d4;box-shadow:0 0 0 1px #00b8d4;font-weight:600}
 #shapechip button{border:0;background:var(--soft);border-radius:6px;width:24px;height:24px;cursor:pointer}
 #modal{position:fixed;inset:0;background:rgba(10,20,30,.35);z-index:50;display:flex;align-items:center;justify-content:center}
 #modal .dlg{position:static;overflow-x:hidden;transform:none;width:min(620px,94vw);padding:18px 20px;max-height:90vh;overflow:auto}

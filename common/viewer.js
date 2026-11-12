@@ -388,9 +388,12 @@ function delNew(key) {   // removes shapes added in this browser for the key, an
 }
 map.on('load', () => {
   map.addSource('drawn', {type: 'geojson', data: {type: 'FeatureCollection', features: []}});
-  map.addLayer({id: 'drawn-fill', type: 'fill', source: 'drawn', filter: ['==', ['geometry-type'], 'Polygon'], paint: {'fill-color': '#e0218a', 'fill-opacity': .12}});
-  map.addLayer({id: 'drawn-line', type: 'line', source: 'drawn', paint: {'line-color': '#e0218a', 'line-width': 2.5, 'line-dasharray': [2, 1.5]}});
-  map.addLayer({id: 'drawn-pt', type: 'circle', source: 'drawn', filter: ['==', ['geometry-type'], 'Point'], paint: {'circle-radius': 4, 'circle-color': '#fff', 'circle-stroke-color': '#e0218a', 'circle-stroke-width': 2}});
+  // filter shapes: bright cyan on a dark outline – no plan layer uses cyan (boundaries are navy, added features magenta), and the outline keeps it clear over imagery, printed plans and labels
+  map.addLayer({id: 'drawn-fill', type: 'fill', source: 'drawn', filter: ['==', ['geometry-type'], 'Polygon'], paint: {'fill-color': '#00e5ff', 'fill-opacity': .16}});
+  map.addLayer({id: 'drawn-buf', type: 'line', source: 'drawn', filter: ['has', 'buf'], paint: {'line-color': '#00b8d4', 'line-width': 1.5}});
+  map.addLayer({id: 'drawn-case', type: 'line', source: 'drawn', filter: ['!', ['has', 'buf']], layout: {'line-join': 'round', 'line-cap': 'round'}, paint: {'line-color': '#062a33', 'line-width': 6, 'line-opacity': .85}});
+  map.addLayer({id: 'drawn-line', type: 'line', source: 'drawn', filter: ['!', ['has', 'buf']], layout: {'line-join': 'round'}, paint: {'line-color': '#00e5ff', 'line-width': 3, 'line-dasharray': [2.2, 1.2]}});
+  map.addLayer({id: 'drawn-pt', type: 'circle', source: 'drawn', filter: ['==', ['geometry-type'], 'Point'], paint: {'circle-radius': 5, 'circle-color': '#00e5ff', 'circle-stroke-color': '#062a33', 'circle-stroke-width': 2.5}});
   if (NEW.length) map.getSource('f').setData({type: 'FeatureCollection', features: D.features});
 });
 const showDrawn = fs => map.getSource('drawn') && map.getSource('drawn').setData({type: 'FeatureCollection', features: fs});
@@ -418,7 +421,7 @@ map.on('click', e => { if (!DRAW) return; DRAW.pts.push([e.lngLat.lng, e.lngLat.
 map.on('dblclick', e => { if (DRAW) { e.preventDefault(); DRAW.pts.pop(); finishDraw(); } });
 map.on('mousemove', e => { if (DRAW && DRAW.pts.length) sketch([e.lngLat.lng, e.lngLat.lat]); });
 document.addEventListener('keydown', e => { if (!DRAW) return; if (e.key === 'Escape') cancelDraw(); if (e.key === 'Enter') finishDraw(); });
-function shapeFs() { return SHAPES.flatMap(x => [x.area, ...(x.line ? [x.line] : [])]); }
+function shapeFs() { return SHAPES.flatMap(x => x.line ? [{...x.area, properties: {buf: 1}}, x.line] : [x.area]); }   // a line's buffer is drawn lighter than the line
 function applyShapes() {   // projects touching any drawn shape
   if (!SHAPES.length) { INSHAPE = null; $('shapechip').hidden = true; showDrawn(DRAW ? [] : shapeFs()); return; }
   INSHAPE = new Set(D.features.filter(f => f.properties.key && AON.has(f.properties.area) && SHAPES.some(x => turf.booleanIntersects(f, x.area))).map(f => f.properties.key));
@@ -531,7 +534,7 @@ $('bSnap').onclick = () => {
     let K; try { K = await loadKit(); } catch (e) { $('sMsg').textContent = 'Could not load the snapshot kit (' + e.message + '). Run python tools/build_snapshot_kit.py.'; return; }
     const now = new Date(), made = now.toLocaleString('en-AU', {day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'});
     const c = map.getCenter(), snap = {made, title: $('sT').value.trim(), note: $('sN').value.trim(), rows: rows.length, added: nNew, edited: nEd, kit: K.v,
-      view: {center: [c.lng, c.lat], zoom: map.getZoom(), bearing: map.getBearing()}, imgs: $('sI').checked ? [...IMGON] : []};
+      view: {center: [c.lng, c.lat], zoom: map.getZoom(), bearing: map.getBearing()}, shapes: SHAPES, imgs: $('sI').checked ? [...IMGON] : []};
     const fix = t => t.replace(/<\/(script|style)/gi, '<\\/$1').replace(/<!--/g, '<\\!--');
     const plans = snapshotPlans(rows, $('sI').checked);
     const html = `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${esc(snap.title || 'Contribution plans snapshot')} – ${esc(made)}</title>\n`
@@ -545,6 +548,7 @@ $('bSnap').onclick = () => {
   };
 };
 if (SNAP) { document.body.classList.add('snapshot'); (SNAP.imgs || []).forEach(m => D.images[m] && IMGON.add(m)); applyVis();
+  if (SNAP.shapes?.length) map.on('load', () => { SHAPES = SNAP.shapes.slice(); applyShapes(); render(); });   // the sender's drawn filter shapes
   if (SNAP.note) setTimeout(() => { const d = document.createElement('div'); d.className = 'snapbanner card'; d.innerHTML = `<b>Note from the sender:</b> ${esc(SNAP.note)} <button class="btn" title="Close">✕</button>`; d.querySelector('button').onclick = () => d.remove(); $('map').appendChild(d); }, 0); }
 window.APP = {map, select, get SHAPES() { return SHAPES; }, get READY() { return READY; }, get SEL() { return SEL; }, FBYKEY, AON, IMGON, MAPON, applyVis};
 applyVis();
