@@ -77,11 +77,11 @@ document.body.innerHTML = `
     </div></aside>
     <aside id="detail" class="card hidden"></aside>
     <div id="drawbar" class="card">
-      <span class="dl">Filter by drawing</span><button data-d="filter:polygon" title="Draw an area: double-click to finish">▱ Area</button><button data-d="filter:line" title="Draw a line (projects within the buffer): double-click to finish">⟋ Line</button>
+      <span class="dl">Filter by drawing</span><button data-d="filter:polygon" title="Draw areas: double-click to finish each one; keep drawing to add more (a project in any of them is shown); Esc to stop">▱ Area</button><button data-d="filter:line" title="Draw lines (projects within the buffer): double-click to finish each one; keep drawing to add more; Esc to stop">⟋ Line</button>
       <label class="buf" title="Buffer around a drawn line">± <input id="bufM" type="number" value="50" min="5" step="5"> m</label>
       <span class="sep"></span><span class="dl">Add feature</span><button data-d="add:point" title="Click once">• Point</button><button data-d="add:line" title="Double-click to finish">⟋ Line</button><button data-d="add:polygon" title="Double-click to finish">▱ Polygon</button>
       <span id="drawhint" class="hint"></span></div>
-    <div id="shapechip" class="card" hidden><span>Filtered by drawn shape</span><button id="shapeX" title="Clear">✕</button></div>
+    <div id="shapechip" class="card" hidden><span>Filtered by drawn shape</span><button id="shapeU" title="Remove the last drawn shape">↶</button><button id="shapeX" title="Clear all drawn shapes">✕</button></div>
   </div>
   <div id="resizer" title="Drag to resize"></div>
   <section id="bottom">
@@ -140,7 +140,7 @@ function swatch(c) {
   return `<span style="display:block;width:24px;height:14px;border-radius:3px;background:${bg};border:1.5px solid ${c.outline || c.color}${c.style === 'outline' ? ';background:transparent;border-style:dashed' : ''}"></span>${c.icon ? `<span style="margin-left:-20px">${ICONS[c.icon][3]}</span>` : ''}`;
 }
 const VIS = Object.fromEntries(Object.entries(CLS).map(([k, c]) => [k, c.on !== false]));
-let READY = false, SEL = null, HOV = null, DRAW = null, INSHAPE = null;
+let READY = false, SEL = null, HOV = null, DRAW = null, INSHAPE = null, SHAPES = [];   // SHAPES: the filter's drawn areas and lines (a project in any of them is shown)
 const LIDS = [];   // [layer id, class]
 map.on('load', () => {
   map.addSource('f', {type: 'geojson', data: {type: 'FeatureCollection', features: D.features}});
@@ -395,37 +395,45 @@ map.on('load', () => {
 });
 const showDrawn = fs => map.getSource('drawn') && map.getSource('drawn').setData({type: 'FeatureCollection', features: fs});
 function sketch(cursor) {
-  if (!DRAW) return showDrawn([]); const p = DRAW.pts.concat(cursor ? [cursor] : []), fs = p.map(c => turf.point(c));
+  if (!DRAW) return showDrawn(shapeFs()); const p = DRAW.pts.concat(cursor ? [cursor] : []), fs = p.map(c => turf.point(c));
   if (DRAW.kind === 'polygon' && p.length >= 3) fs.push(turf.polygon([[...p, p[0]]])); else if (p.length >= 2) fs.push(turf.lineString(p));
-  showDrawn(fs);
+  showDrawn([...shapeFs(), ...fs]);
 }
 function startDraw(mode, kind) {
   cancelDraw(); DRAW = {mode, kind, pts: []}; map.doubleClickZoom.disable(); map.getCanvas().style.cursor = 'crosshair';
   document.querySelectorAll('#drawbar button').forEach(b => b.classList.toggle('on', b.dataset.d === mode + ':' + kind));
   $('drawhint').textContent = kind === 'point' ? 'Click on the map · Esc to cancel' : `Click to add points · double-click or Enter to finish · Esc to cancel`;
 }
-function cancelDraw() { DRAW = null; map.doubleClickZoom.enable(); map.getCanvas().style.cursor = ''; document.querySelectorAll('#drawbar button').forEach(b => b.classList.remove('on')); $('drawhint').textContent = ''; if (!INSHAPE) showDrawn([]); }
+function cancelDraw() { DRAW = null; map.doubleClickZoom.enable(); map.getCanvas().style.cursor = ''; document.querySelectorAll('#drawbar button').forEach(b => b.classList.remove('on')); $('drawhint').textContent = ''; showDrawn(shapeFs()); }
 function finishDraw() {
   const d = DRAW; if (!d) return; const p = d.pts;
   if ((d.kind === 'line' && p.length < 2) || (d.kind === 'polygon' && p.length < 3)) return;
   const geom = d.kind === 'point' ? {type: 'Point', coordinates: p[0]} : d.kind === 'line' ? {type: 'LineString', coordinates: p} : {type: 'Polygon', coordinates: [[...p, p[0]]]};
   cancelDraw();
-  if (d.mode === 'filter') applyShape(geom); else addForm(geom, d.kind);
+  if (d.mode === 'filter') { applyShape(geom); startDraw('filter', d.kind); $('drawhint').textContent = `${SHAPES.length} drawn · draw another ${d.kind === 'line' ? 'line' : 'area'} to add to the filter · Esc to stop drawing`; }   // stays on: several shapes in a row
+  else addForm(geom, d.kind);
 }
 document.querySelectorAll('#drawbar button').forEach(b => b.onclick = () => { const [m, k] = b.dataset.d.split(':'); DRAW && b.classList.contains('on') ? cancelDraw() : startDraw(m, k); });
 map.on('click', e => { if (!DRAW) return; DRAW.pts.push([e.lngLat.lng, e.lngLat.lat]); if (DRAW.kind === 'point') finishDraw(); else sketch(); });
 map.on('dblclick', e => { if (DRAW) { e.preventDefault(); DRAW.pts.pop(); finishDraw(); } });
 map.on('mousemove', e => { if (DRAW && DRAW.pts.length) sketch([e.lngLat.lng, e.lngLat.lat]); });
 document.addEventListener('keydown', e => { if (!DRAW) return; if (e.key === 'Escape') cancelDraw(); if (e.key === 'Enter') finishDraw(); });
-function applyShape(geom) {
-  const area = geom.type === 'LineString' ? turf.buffer(turf.lineString(geom.coordinates), Math.max(1, +$('bufM').value || 50), {units: 'meters'}) : turf.polygon(geom.coordinates);
-  INSHAPE = new Set(D.features.filter(f => f.properties.key && AON.has(f.properties.area) && turf.booleanIntersects(f, area)).map(f => f.properties.key));
-  showDrawn([area, ...(geom.type === 'LineString' ? [turf.lineString(geom.coordinates)] : [])]); $('shapechip').hidden = false;
-  $('shapechip').querySelector('span').textContent = `Filtered by drawn ${geom.type === 'LineString' ? 'line (± ' + (+$('bufM').value || 50) + ' m)' : 'area'}: ${INSHAPE.size} projects`;
-  render();
+function shapeFs() { return SHAPES.flatMap(x => [x.area, ...(x.line ? [x.line] : [])]); }
+function applyShapes() {   // projects touching any drawn shape
+  if (!SHAPES.length) { INSHAPE = null; $('shapechip').hidden = true; showDrawn(DRAW ? [] : shapeFs()); return; }
+  INSHAPE = new Set(D.features.filter(f => f.properties.key && AON.has(f.properties.area) && SHAPES.some(x => turf.booleanIntersects(f, x.area))).map(f => f.properties.key));
+  showDrawn(shapeFs()); $('shapechip').hidden = false;
+  const nA = SHAPES.filter(x => !x.line).length, nL = SHAPES.length - nA, pl = (n, w) => n ? `${n} ${w}${n > 1 ? 's' : ''}` : '';
+  $('shapechip').querySelector('span').textContent = (SHAPES.length === 1 ? `Filtered by drawn ${nL ? 'line (± ' + SHAPES[0].buf + ' m)' : 'area'}` : `Filtered by ${[pl(nA, 'area'), pl(nL, 'line')].filter(Boolean).join(' and ')}`) + `: ${INSHAPE.size} projects`;
 }
-function clearShape() { INSHAPE = null; $('shapechip').hidden = true; if (!DRAW) showDrawn([]); }
+function applyShape(geom) {
+  const buf = Math.max(1, +$('bufM').value || 50);
+  SHAPES.push(geom.type === 'LineString' ? {area: turf.buffer(turf.lineString(geom.coordinates), buf, {units: 'meters'}), line: turf.lineString(geom.coordinates), buf} : {area: turf.polygon(geom.coordinates)});
+  applyShapes(); render();
+}
+function clearShape() { SHAPES = []; INSHAPE = null; $('shapechip').hidden = true; showDrawn([]); }
 $('shapeX').onclick = () => { clearShape(); render(); };
+$('shapeU').onclick = () => { SHAPES.pop(); applyShapes(); render(); };
 const KIND = {point: 'point', line: 'line', polygon: 'fill'}, GT = {point: 'points', line: 'lines', polygon: 'polygons'};
 function addForm(geom, kind) {
   const areas = AREAS.filter(a => AON.has(a.id)); if (!areas.length) return alert('Turn on a plan area first.');
@@ -538,6 +546,6 @@ $('bSnap').onclick = () => {
 };
 if (SNAP) { document.body.classList.add('snapshot'); (SNAP.imgs || []).forEach(m => D.images[m] && IMGON.add(m)); applyVis();
   if (SNAP.note) setTimeout(() => { const d = document.createElement('div'); d.className = 'snapbanner card'; d.innerHTML = `<b>Note from the sender:</b> ${esc(SNAP.note)} <button class="btn" title="Close">✕</button>`; d.querySelector('button').onclick = () => d.remove(); $('map').appendChild(d); }, 0); }
-window.APP = {map, select, get READY() { return READY; }, get SEL() { return SEL; }, FBYKEY, AON, IMGON, MAPON, applyVis};
+window.APP = {map, select, get SHAPES() { return SHAPES; }, get READY() { return READY; }, get SEL() { return SEL; }, FBYKEY, AON, IMGON, MAPON, applyVis};
 applyVis();
 })();
