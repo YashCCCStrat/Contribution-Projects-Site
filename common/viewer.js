@@ -52,7 +52,7 @@ const SINGLE = AREAS.length === 1;   // a plan's own page (croskell.html …) lo
 const AON = new Set(SINGLE ? [AREAS[0].id] : store.get('cfb-areas', AREAS.map(a => a.id)).filter(a => AREA[a]));
 if (!AON.size) AREAS.forEach(a => AON.add(a.id));
 // pages: one per plan, plus all plans together (add a plan here when its page is added)
-const PAGES = [['croskell.html', 'Croskell ICP', 'croskell'], ['collison.html', 'Collison Estate DCP', 'collison'], ['cranbourne-east.html', 'Cranbourne East DCP', 'cranbourneeast'], ['index.html', 'All plans', '']];
+const PAGES = [['croskell.html', 'Croskell ICP', 'croskell'], ['collison.html', 'Collison Estate DCP', 'collison'], ['cranbourne-east.html', 'Cranbourne East DCP', 'cranbourneeast'], ['botanic-ridge.html', 'Botanic Ridge DCP', 'botanicridge'], ['index.html', 'All plans', '']];
 if (!AON.size) AREAS.forEach(a => AON.add(a.id));
 const IMGON = new Set();                                   // plan maps shown as printed (image)
 const MAPON = new Set(D.maps.map(m => m.id));              // plans switched on: their legend items and rows

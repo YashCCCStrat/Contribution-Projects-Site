@@ -10,10 +10,10 @@ land-acquisition decisions.
 open data, and reviewed by the owner.
 
 ## Pages
-- `index.html` – all plans together · `croskell.html` · `collison.html` · `cranbourne-east.html`
+- `index.html` – all plans together · `croskell.html` · `collison.html` · `cranbourne-east.html` · `botanic-ridge.html`
 
 ## Data sources and licences
-- Croskell (Employment) ICP (Oct 2025), Collison Estate DCP (V4.1, Feb 2025), Cranbourne East DCP (May 2010, amended Dec 2023):
+- Croskell (Employment) ICP (Oct 2025), Collison Estate DCP (V4.1, Feb 2025), Cranbourne East DCP (May 2010, amended Dec 2023), Botanic Ridge DCP (Dec 2012, amended Dec 2023):
   Victorian Planning Authority / City of Casey, as gazetted.
 - Vicmap Planning overlays and Vicmap Property parcels: © State of Victoria (Department of Transport and Planning), CC BY 4.0.
 - VPA precinct boundaries and Future Urban Structure land use: Victorian Planning Authority, CC BY 4.0.
