@@ -6,7 +6,10 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 const money = v => v == null || v === '' ? '' : '$' + Math.round(v).toLocaleString('en-AU');
 const fmtv = (v, t) => v == null || v === '' ? '' : t === 'money' ? money(v) : t === 'num' ? (+v).toLocaleString('en-AU', {maximumFractionDigits: 4}) : t === 'ha' ? v + ' ha' : t === 'm' ? v + ' m' : t === 'pct' ? v + '%' : v;
-const store = {get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }};
+const SNAP = window.SNAPSHOT || null;   // a Snapshot file (made with the Snapshot button): read-only, nothing kept in the browser
+const MEM = {};
+const store = SNAP ? {get: (k, d) => MEM[k] ?? d, set: (k, v) => { MEM[k] = v; }}
+  : {get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }};
 
 // ---------- merge the plan areas (ids prefixed with the area) ----------
 const PL = window.PLANS || [];
@@ -96,6 +99,7 @@ document.body.innerHTML = `
       <button class="btn primary" id="bExpF" title="Excel in your register schema: the rows the table shows now (search, plan map, categories, map view and drawn-shape filters, in table order). With no filter, every row of the plan areas switched on.">Export to Excel</button>
       <button class="btn" id="bImp" title="Restore edits from a file this app made: an Excel export (all edited columns, matched by Row ID) or a Changes for repo file (edits and added shapes)">Import edits</button><input type="file" id="fImp" accept=".xlsx,.geojson,.json" hidden>
       <button class="btn" id="bChg" title="Download your edits and added features for the repository: save into gis/edit/inbox/ and push (see docs/EDITING.md)">Changes for repo</button>
+      <button class="btn" id="bSnap" title="Save one HTML file with the map and table of the rows shown now (your drawn features and edits included), read-only, for colleagues: it opens in any browser, no repository or website needed">Snapshot</button>
       <button class="btn" id="bGis" title="Download the shapes of the rows shown, with their table attributes and your edits, as GeoJSON (opens in QGIS; save as shapefile or GeoPackage there)">GIS export</button>
     </div>
     <div id="tablewrap"><table><thead id="th"></thead><tbody id="tb"></tbody></table></div>
@@ -159,7 +163,7 @@ map.on('load', () => {
   }
   map.addLayer({id: 'labels', type: 'symbol', source: 'f', filter: ['all', ['has', 'project_id'], ['!', ['in', ['get', 'cls'], ['literal', Object.keys(CLS).filter(k => CLS[k].nolabel)]]]],   // classes marked nolabel (e.g. printed symbols) carry no label of their own
     layout: {'text-field': ['get', 'project_id'], 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-offset': [0, 1.3], 'text-padding': 3}, paint: {'text-color': '#17222b', 'text-halo-color': '#fff', 'text-halo-width': 2}});
-  READY = true; applyVis(); fitAll();
+  READY = true; applyVis(); fitAll(); if (SNAP?.view) map.jumpTo(SNAP.view);
   const pickable = () => LIDS.filter(([id, k]) => !CLS[k].context && map.getLayoutProperty(id, 'visibility') !== 'none' && !id.endsWith('-i')).map(([id]) => id);
   const tip = new maplibregl.Popup({closeButton: false, closeOnClick: false, offset: 14, maxWidth: '320px'});
   map.on('mousemove', e => { if (DRAW) return;
@@ -181,6 +185,7 @@ function applyVis() {
 }
 // plan-area switches in the header
 function buildPages() {
+  if (SNAP) { $('pages').innerHTML = `<span class="snapnote" title="${esc(SNAP.note || '')}">Snapshot ${esc(SNAP.made)} · read-only${SNAP.title ? ' · ' + esc(SNAP.title) : ''}</span>`; document.title = (SNAP.title || 'Snapshot') + ' – ' + SNAP.made; return; }
   const here = SINGLE ? AREAS[0].id : '';
   $('pages').innerHTML = PAGES.map(([href, label, id]) => `<a href="${href}" class="${id === here ? 'on' : ''}" ${id === here ? 'aria-current="page"' : ''}>${esc(label)}</a>`).join('');
   if (SINGLE) document.title = AREAS[0].name + ' – Casey Fields Boulevard';
@@ -319,11 +324,14 @@ function printedTwice(rows) {   // a project printed in full in more than one ta
           ['Construction sum', `Adding the Construction cost column gives ${money(all)}; counting each project once gives ${money(all - extra)}.`]];
 }
 function exportXlsx(rows, label) {
-  const E = D.export, aoa = [E.columns], today = new Date().toISOString().slice(0, 10);
-  const fieldsOf = r => PL.find(P => P.meta.id === r.area).export.fields;
+  // the owner's register layout, plus "Construction / land" after "Levy component" (owner's request, 2026-11-12)
+  const E = D.export, at = E.fields.indexOf('component') + 1, ins = (a, x) => [...a.slice(0, at), x, ...a.slice(at)];
+  const aoa = [ins(E.columns, 'Construction / land')], today = new Date().toISOString().slice(0, 10);
+  const fieldsOf = r => ins(PL.find(P => P.meta.id === r.area).export.fields, 'type');
   rows.forEach(r => aoa.push(fieldsOf(r).map(f => { const v = f.includes('{') ? f.replace(/\{(\w+)\}/g, (_, k) => val(r, k) ?? '').replace(/ – $/, '') : val(r, f); return v === '' || v == null ? null : v; })));
-  const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = E.widths.map(w => ({wch: w}));
-  for (let i = 2; i <= aoa.length; i++) { for (const c of ['H', 'I']) if (ws[c + i]) ws[c + i].z = '"$"#,##0.00'; if (ws['F' + i]) ws['F' + i].z = '0.0000'; }
+  const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = ins(E.widths, 18).map(w => ({wch: w}));
+  const colOf = f => XLSX.utils.encode_col(fieldsOf(rows[0] || {area: PL[0].meta.id}).indexOf(f));   // number formats follow the columns
+  for (let i = 2; i <= aoa.length; i++) { for (const c of [colOf('land_cost_aud'), colOf('construction_cost_aud')]) if (ws[c + i]) ws[c + i].z = '"$"#,##0.00'; if (ws[colOf('land_ha') + i]) ws[colOf('land_ha') + i].z = '0.0000'; }
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, ('project-register-' + today).slice(0, 31));
   const det = rows.map(r => Object.fromEntries([['Row ID', r.rid], ...D.columns.map(c => [c.label, val(r, c.k)])]));
   const wd = XLSX.utils.json_to_sheet(det); wd['!cols'] = Object.keys(det[0] || {}).map(k => ({wch: Math.max(10, Math.min(40, k.length + 4))})); XLSX.utils.book_append_sheet(wb, wd, 'Details');
@@ -474,6 +482,57 @@ $('bChg').onclick = () => {   // edits + added features, for gis/edit/inbox/ (ap
     ? 'Send this file to the project owner (it holds only your status / land-acquired notes and any features you drew). Your changes stay in this browser; the website is not changed until the owner applies the file.'
     : 'Put the file in gis/edit/inbox/ in your copy of the repository and push it (GitHub Desktop): the repository applies them and rebuilds the app.'));
 };
+// ---------- Snapshot: one self-contained HTML file (map + table, read-only) of the rows shown now, for colleagues ----------
+// The file carries the plan data of those rows (edits applied, drawn features as ordinary features) and the viewer's code
+// and libraries (app/common/snapshot_kit.js, written by tools/build_snapshot_kit.py). Basemaps load from the internet.
+function loadKit() { return window.SNAPKIT ? Promise.resolve(window.SNAPKIT) : new Promise((ok, no) => { const sc = document.createElement('script');
+  sc.src = 'common/snapshot_kit.js'; sc.onload = () => window.SNAPKIT ? ok(window.SNAPKIT) : no(new Error('kit empty')); sc.onerror = () => no(new Error('common/snapshot_kit.js not found')); document.head.appendChild(sc); }); }
+function snapshotPlans(rows, withImages) {
+  const strip = (a, x) => x && x.startsWith(a + ':') ? x.slice(a.length + 1) : x, out = [];
+  for (const P of PL) {
+    const a = P.meta.id, rs = rows.filter(r => r.area === a); if (!rs.length) continue;
+    const keys = new Set(rs.map(r => r.project_id + '|' + strip(a, r.map)));
+    const lrows = rs.map(r => { const o = {}; Object.keys(r).forEach(k => { if (!['key', 'area', 'area_name', 'isNew'].includes(k)) o[k] = r[k]; });
+      D.columns.forEach(c => { if (c.k !== 'area_name') o[c.k] = val(r, c.k) ?? null; }); o.rid = strip(a, r.rid); o.map = strip(a, r.map); return o; });
+    const feats = P.features.filter(f => !f.properties.key || keys.has(f.properties.key));
+    D.features.filter(f => f.properties.isNew && f.properties.area === a).forEach(f => { const k = f.properties.project_id + '|' + strip(a, f.properties.map);
+      if (keys.has(k)) feats.push({type: 'Feature', properties: {cls: strip(a, f.properties.cls), map: strip(a, f.properties.map), project_id: f.properties.project_id, key: k, added: 1}, geometry: f.geometry}); });
+    const maps = new Set(lrows.map(r => r.map));
+    out.push({...P, rows: lrows, features: feats, images: withImages ? Object.fromEntries(Object.entries(P.images).filter(([k]) => maps.has(k))) : {}});
+  }
+  return out;
+}
+$('bSnap').onclick = () => {
+  const rows = filtered(); if (!rows.length) return alert('No rows shown: nothing to put in a snapshot.');
+  const nNew = rows.filter(r => r.isNew).length, nEd = rows.filter(r => EDITS[r.rid] && Object.keys(EDITS[r.rid]).some(k => canEdit(r, k))).length;
+  const m = document.createElement('div'); m.id = 'modal'; m.innerHTML = `<div class="dlg card"><h2>Snapshot for colleagues</h2>
+    <p class="fit">One HTML file with the map and the table of the <b>${rows.length} rows shown now</b> (${nNew} drawn by you, ${nEd} with your edits), as they are now. Colleagues open it in a browser (no install); they can search, filter, click and export to Excel, but not edit. It does not update: make a new one after changes.</p>
+    <div class="grid"><label class="w">Title (optional)<input id="sT" placeholder="e.g. Botanic Ridge roads – for review"></label>
+    <label class="w">Note for colleagues (optional)<input id="sN" placeholder="e.g. RD09 drawn by me, not in the plan"></label>
+    <label class="w" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="sI" checked style="width:auto"> Include the printed plan maps (larger file)</label></div>
+    <p class="fit"><b>Before sharing:</b> the file holds your edits (status, land acquired) and drawn features. Share it inside Council (Teams, SharePoint, email); do not put internal information in the repository or on the public website. It is a working aid, not an official record.</p>
+    <p class="fit" id="sMsg"></p><div class="actions" style="justify-content:flex-end"><button class="btn" id="sCancel">Cancel</button><button class="btn primary" id="sSave">Save snapshot</button></div></div>`;
+  document.body.appendChild(m); $('sCancel').onclick = () => m.remove(); $('sT').focus();
+  $('sSave').onclick = async () => {
+    $('sMsg').textContent = 'Preparing…';
+    let K; try { K = await loadKit(); } catch (e) { $('sMsg').textContent = 'Could not load the snapshot kit (' + e.message + '). Run python tools/build_snapshot_kit.py.'; return; }
+    const now = new Date(), made = now.toLocaleString('en-AU', {day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'});
+    const c = map.getCenter(), snap = {made, title: $('sT').value.trim(), note: $('sN').value.trim(), rows: rows.length, added: nNew, edited: nEd, kit: K.v,
+      view: {center: [c.lng, c.lat], zoom: map.getZoom(), bearing: map.getBearing()}, imgs: $('sI').checked ? [...IMGON] : []};
+    const fix = t => t.replace(/<\/(script|style)/gi, '<\\/$1').replace(/<!--/g, '<\\!--');
+    const plans = snapshotPlans(rows, $('sI').checked);
+    const html = `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${esc(snap.title || 'Contribution plans snapshot')} – ${esc(made)}</title>\n`
+      + `<!-- Snapshot of the Casey Fields Boulevard contribution plans viewer, ${esc(made)}: ${rows.length} rows (${nNew} drawn by the user, ${nEd} edited). Read-only. A working aid, not an official record: check against the gazetted plan. Prepared with generative AI assistance (Claude Code, Anthropic) from public plan documents and open data. Libraries: MapLibre GL JS (BSD-3-Clause), SheetJS CE (Apache-2.0), Turf.js (MIT). -->\n`
+      + K.css.map(t => `<style>${fix(t)}</style>`).join('\n') + `\n</head><body>\n<script>window.SNAPSHOT = ${fix(JSON.stringify(snap))};\nwindow.PLANS = ${fix(JSON.stringify(plans))};</script>\n`
+      + K.js.map(t => `<script>${fix(t)}</script>`).join('\n') + '\n</body></html>\n';
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([html], {type: 'text/html'}));
+    const slug = (snap.title || 'snapshot').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'snapshot';
+    a.download = `plans-${slug}-${now.toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-')}.html`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    m.remove(); alert(`Saved ${a.download} (${(html.length / 1048576).toFixed(1)} MB, ${rows.length} rows). Send it to colleagues; it opens in any browser.`);
+  };
+};
+if (SNAP) { document.body.classList.add('snapshot'); (SNAP.imgs || []).forEach(m => D.images[m] && IMGON.add(m)); applyVis();
+  if (SNAP.note) setTimeout(() => { const d = document.createElement('div'); d.className = 'snapbanner card'; d.innerHTML = `<b>Note from the sender:</b> ${esc(SNAP.note)} <button class="btn" title="Close">✕</button>`; d.querySelector('button').onclick = () => d.remove(); $('map').appendChild(d); }, 0); }
 window.APP = {map, select, get READY() { return READY; }, get SEL() { return SEL; }, FBYKEY, AON, IMGON, MAPON, applyVis};
 applyVis();
 })();
