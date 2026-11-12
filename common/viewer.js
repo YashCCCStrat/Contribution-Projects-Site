@@ -284,7 +284,7 @@ function filtered() {
   return rs;
 }
 function render() {
-  const rs = filtered(), keys = [...new Set(rs.map(r => r.key))], cols = COLS.filter(c => c.show);
+  const rs = filtered(); shapeChip(rs); const keys = [...new Set(rs.map(r => r.key))], cols = COLS.filter(c => c.show);
   $('th').innerHTML = '<tr>' + cols.map(c => `<th data-k="${c.k}" class="${['money', 'num'].includes(c.t) ? 'num' : ''}">${esc(c.label)}${SORT.k === c.k ? (SORT.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('') + '</tr>';
   $('th').querySelectorAll('th').forEach(th => th.onclick = () => { SORT = {k: th.dataset.k, dir: SORT.k === th.dataset.k ? -SORT.dir : 1}; render(); });
   $('tb').innerHTML = rs.length ? rs.map(r => `<tr data-key="${esc(r.key)}" data-rid="${esc(r.rid)}" class="${r.key === SEL ? 'sel' : ''}">` + cols.map(c =>
@@ -426,8 +426,16 @@ function applyShapes() {   // projects touching any drawn shape
   if (!SHAPES.length) { INSHAPE = null; $('shapechip').hidden = true; showDrawn(DRAW ? [] : shapeFs()); return; }
   INSHAPE = new Set(D.features.filter(f => f.properties.key && AON.has(f.properties.area) && SHAPES.some(x => turf.booleanIntersects(f, x.area))).map(f => f.properties.key));
   showDrawn(shapeFs()); $('shapechip').hidden = false;
-  const nA = SHAPES.filter(x => !x.line).length, nL = SHAPES.length - nA, pl = (n, w) => n ? `${n} ${w}${n > 1 ? 's' : ''}` : '';
-  $('shapechip').querySelector('span').textContent = (SHAPES.length === 1 ? `Filtered by drawn ${nL ? 'line (± ' + SHAPES[0].buf + ' m)' : 'area'}` : `Filtered by ${[pl(nA, 'area'), pl(nL, 'line')].filter(Boolean).join(' and ')}`) + `: ${INSHAPE.size} projects`;
+}
+// the chip counts what the table shows (all filters on): rows, and projects when a project has more than one row
+// (e.g. CK-RD-01, one shape printed in Tables 5 and 6)
+function shapeChip(rs) {
+  if (!SHAPES.length) return;
+  const nA = SHAPES.filter(x => !x.line).length, nL = SHAPES.length - nA, pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  const nP = new Set(rs.map(r => r.area + ':' + r.project_id)).size;
+  $('shapechip').querySelector('span').textContent = (SHAPES.length === 1 ? `Filtered by drawn ${nL ? 'line (± ' + SHAPES[0].buf + ' m)' : 'area'}` : `Filtered by ${[nA && pl(nA, 'area'), nL && pl(nL, 'line')].filter(Boolean).join(' and ')}`)
+    + `: ${pl(rs.length, 'row')}` + (nP !== rs.length ? ` (${pl(nP, 'project')})` : '');
+  $('shapechip').title = nP !== rs.length ? 'Some projects have more than one row (printed in more than one table, or on more than one plan map); the table counts rows.' : '';
 }
 function applyShape(geom) {
   const buf = Math.max(1, +$('bufM').value || 50);
