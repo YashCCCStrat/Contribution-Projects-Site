@@ -114,11 +114,12 @@ const ESRI = n => `https://server.arcgisonline.com/ArcGIS/rest/services/${n}/Map
 const map = new maplibregl.Map({container: 'map', attributionControl: {compact: true}, center: [145.33, -38.10], zoom: 13.5, maxZoom: 19,
   style: {version: 8, glyphs: 'glyphs://{fontstack}/{range}', sources: {
     imagery: {type: 'raster', tiles: [ESRI('World_Imagery')], tileSize: 256, maxzoom: 19, attribution: 'Esri World Imagery'},
+    imageryhd: {type: 'raster', tiles: [ESRI('World_Imagery')], tileSize: 128, maxzoom: 19, attribution: 'Esri World Imagery'},   // Map PDF only: tiles one zoom level deeper (twice the detail)
     streets: {type: 'raster', tiles: [ESRI('World_Street_Map')], tileSize: 256, maxzoom: 19, attribution: 'Esri, © OpenStreetMap contributors'},
     // "Imagery + street names": Esri's reference overlays (roads with names; suburbs and places) over the imagery, as in Esri's Hybrid basemap
     roads: {type: 'raster', tiles: [ESRI('Reference/World_Transportation')], tileSize: 256, maxzoom: 19, attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors'},
     places: {type: 'raster', tiles: [ESRI('Reference/World_Boundaries_and_Places')], tileSize: 256, maxzoom: 19, attribution: 'Esri'}},
-    layers: [{id: 'bg', type: 'background', paint: {'background-color': '#eef0ec'}}, {id: 'imagery', type: 'raster', source: 'imagery'}, {id: 'streets', type: 'raster', source: 'streets', layout: {visibility: 'none'}},
+    layers: [{id: 'bg', type: 'background', paint: {'background-color': '#eef0ec'}}, {id: 'imagery', type: 'raster', source: 'imagery'}, {id: 'imageryhd', type: 'raster', source: 'imageryhd', layout: {visibility: 'none'}}, {id: 'streets', type: 'raster', source: 'streets', layout: {visibility: 'none'}},
       {id: 'roads', type: 'raster', source: 'roads', layout: {visibility: 'none'}}, {id: 'places', type: 'raster', source: 'places', layout: {visibility: 'none'}}]}});
 map.addControl(new maplibregl.NavigationControl({showCompass: false}), 'top-right');
 map.addControl(new maplibregl.ScaleControl({unit: 'metric'}), 'bottom-right');
@@ -576,7 +577,8 @@ async function mapIdle(ms = 20000) {   // wait until tiles and images are drawn
   await new Promise(r => { let done = false; const fin = () => { if (!done) { done = true; r(); } }; map.once('idle', fin); map.triggerRepaint(); setTimeout(fin, ms); });
   await nextFrame();
 }
-const grab = () => new Promise(r => { map.once('render', () => r(map.getCanvas().toDataURL('image/jpeg', 0.9))); map.triggerRepaint(); });
+const grab = () => new Promise(r => { map.once('render', () => r(map.getCanvas().toDataURL('image/jpeg', 0.95))); map.triggerRepaint(); });
+const loadScript = src => new Promise(ok => { const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = ok; document.head.appendChild(sc); });   // missing file: carry on without it
 function niceScale(mPerMm) {   // scale bar of about 40 mm, with a round length
   const target = 40 * mPerMm, p = Math.pow(10, Math.floor(Math.log10(target))), len = [1, 2, 5, 10].map(x => x * p).filter(x => x <= target).pop();
   return {len, mm: len / mPerMm, label: len >= 1000 ? len / 1000 + ' km' : len + ' m'};
@@ -589,8 +591,11 @@ async function mapPdf(o) {
   const maps = D.maps.filter(m => rows.some(r => r.map === m.id)), groups = o.perMap ? maps.map(m => [m]) : [maps];
   const keep = {mapon: new Set(MAPON), imgon: new Set(IMGON), sel: SEL, center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pr: map.getPixelRatio(), css: $('map').style.cssText,
     opac: Object.fromEntries(Object.keys(D.images).map(m => [m, map.getPaintProperty('img-' + m, 'raster-opacity')]))};
-  const pages = [];
+  const pages = [], areasIn = [...new Set(rows.map(r => r.area))], swapped = [], hdBase = ['imagery', 'hybrid'].includes($('base').value);
+  if (!SNAP) await Promise.all(areasIn.filter(a => !window.PRINTIMG?.[a]).map(a => loadScript(a + '/print.js')));   // full-resolution plan images (app/<area>/print.js)
   try {
+    for (const m of D.maps) { const hd = window.PRINTIMG?.[m.area]?.[m.id.split(':')[1]]; if (hd && D.images[m.id]) { map.getSource('img-' + m.id).updateImage({url: hd.img, coordinates: hd.coords}); swapped.push(m.id); } }
+    if (hdBase) { vis('imageryhd', true); vis('imagery', false); }
     // print style: filter shapes go under the projects as a thin outline (they must not hide them); larger project labels
     const below = LIDS.find(([, k]) => !CLS[k].context)?.[0];
     if (below) DRAWN.forEach(id => map.moveLayer(id, below));
@@ -609,6 +614,8 @@ async function mapPdf(o) {
       pages.push({g, rs, img, mPerMm, cls, scale: Math.round(mPerMm * 1000 / 500) * 500});
     }
   } finally {
+    swapped.forEach(id => map.getSource('img-' + id).updateImage({url: D.images[id].img, coordinates: D.images[id].coords}));
+    if (hdBase) { vis('imageryhd', false); vis('imagery', true); }
     DRAWN.forEach(id => map.moveLayer(id)); map.setLayoutProperty('drawn-case', 'visibility', 'visible'); map.setPaintProperty('drawn-line', 'line-width', 3); map.setPaintProperty('drawn-fill', 'fill-opacity', .16);
     map.setLayoutProperty('labels', 'text-size', 11); map.setPaintProperty('labels', 'text-halo-width', 2);
     MAPON.clear(); keep.mapon.forEach(m => MAPON.add(m)); IMGON.clear(); keep.imgon.forEach(m => IMGON.add(m));
