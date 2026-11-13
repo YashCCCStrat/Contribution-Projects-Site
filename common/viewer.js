@@ -596,10 +596,10 @@ async function mapPdf(o) {
   try {
     for (const m of D.maps) { const hd = window.PRINTIMG?.[m.area]?.[m.id.split(':')[1]]; if (hd && D.images[m.id]) { map.getSource('img-' + m.id).updateImage({url: hd.img, coordinates: hd.coords}); swapped.push(m.id); } }
     if (hdBase) { vis('imageryhd', true); vis('imagery', false); }
-    // print style: filter shapes go under the projects as a thin outline (they must not hide them); larger project labels
-    const below = LIDS.find(([, k]) => !CLS[k].context)?.[0];
-    if (below) DRAWN.forEach(id => map.moveLayer(id, below));
-    map.setLayoutProperty('drawn-case', 'visibility', 'none'); map.setPaintProperty('drawn-line', 'line-width', 1.8); map.setPaintProperty('drawn-fill', 'fill-opacity', .08);
+    // print style (owner, 2026-11-13): filter shapes bold and on top – areas and line buffers as bold cyan-on-dark outlines; a line's
+    // centre line is left out so it does not cover the project inside its buffer; light fill. Larger project labels.
+    const POLY = ['==', ['geometry-type'], 'Polygon'];
+    map.setFilter('drawn-case', POLY); map.setFilter('drawn-line', POLY); map.setLayoutProperty('drawn-buf', 'visibility', 'none'); map.setPaintProperty('drawn-fill', 'fill-opacity', .1);
     map.setLayoutProperty('labels', 'text-size', 15); map.setPaintProperty('labels', 'text-halo-width', 2.5);
     select(null); $('map').style.cssText += `;position:fixed;left:0;top:0;width:${pxW}px;height:${pxH}px;z-index:-1`; map.setPixelRatio(2); map.resize();
     for (const g of groups) {
@@ -616,7 +616,7 @@ async function mapPdf(o) {
   } finally {
     swapped.forEach(id => map.getSource('img-' + id).updateImage({url: D.images[id].img, coordinates: D.images[id].coords}));
     if (hdBase) { vis('imageryhd', false); vis('imagery', true); }
-    DRAWN.forEach(id => map.moveLayer(id)); map.setLayoutProperty('drawn-case', 'visibility', 'visible'); map.setPaintProperty('drawn-line', 'line-width', 3); map.setPaintProperty('drawn-fill', 'fill-opacity', .16);
+    map.setFilter('drawn-case', ['!', ['has', 'buf']]); map.setFilter('drawn-line', ['!', ['has', 'buf']]); map.setLayoutProperty('drawn-buf', 'visibility', 'visible'); map.setPaintProperty('drawn-fill', 'fill-opacity', .16);
     map.setLayoutProperty('labels', 'text-size', 11); map.setPaintProperty('labels', 'text-halo-width', 2);
     MAPON.clear(); keep.mapon.forEach(m => MAPON.add(m)); IMGON.clear(); keep.imgon.forEach(m => IMGON.add(m));
     Object.entries(keep.opac).forEach(([m, v]) => map.setPaintProperty('img-' + m, 'raster-opacity', v));
@@ -633,7 +633,7 @@ async function mapPdf(o) {
     <b>Use of generative AI:</b> prepared with generative AI assistance (Claude Code, Anthropic) from public plan documents and open data, reviewed by the owner.</p>
     <p>Sources: ${esc(areas.map(a => AREA[a].source).join('; '))}; VPA precinct boundaries and Vicmap (CC BY 4.0); roads © OpenStreetMap contributors / Overture (ODbL); basemap: ${esc(baseTxt)} (Esri, Maxar, Earthstar Geographics, HERE, Garmin, © OpenStreetMap contributors). Linked file: <b>${esc(o.base)}.xlsx</b> (same rows; Row ID).</p></div>`;
   const legend = p => `<h3>Legend</h3>${p.cls.map(k => `<div class="lg"><span class="sw">${swatch(CLS[k])}</span>${esc(CLS[k].label)}</div>`).join('')}
-    ${SHAPES.length ? `<div class="lg"><span class="sw"><svg width="22" height="12"><rect x="1" y="1" width="20" height="10" fill="#00e5ff" fill-opacity=".2" stroke="#062a33" stroke-width="2.5"/><rect x="1" y="1" width="20" height="10" fill="none" stroke="#00e5ff" stroke-width="1.4" stroke-dasharray="3 2"/></svg></span>Drawn filter shapes (projects touching them are shown)</div>` : ''}
+    ${SHAPES.length ? `<div class="lg"><span class="sw"><svg width="22" height="12"><rect x="1" y="1" width="20" height="10" fill="#00e5ff" fill-opacity=".2" stroke="#062a33" stroke-width="2.5"/><rect x="1" y="1" width="20" height="10" fill="none" stroke="#00e5ff" stroke-width="1.4" stroke-dasharray="3 2"/></svg></span>Drawn filter shapes – lines shown by their ± buffer (projects touching them are shown)</div>` : ''}
     ${o.printed && p.g.some(m => D.images[m.id]) ? `<div class="lg"><span class="sw"><svg width="22" height="12"><rect x="1" y="1" width="20" height="10" fill="#c9b8a6" fill-opacity=".5" stroke="#999"/></svg></span>Printed plan underneath, ${o.transp}% transparent: ${esc(p.g.map(m => m.title.split(' · ')[0]).join(', '))}</div>` : ''}`;
   const plist = p => { const seen = new Set(); return `<h3>Projects on this map</h3>` + p.rs.filter(r => !seen.has(r.area + r.project_id) && seen.add(r.area + r.project_id)).map(r =>
     `<div class="pj"><b>${esc(r.project_id)}</b> ${esc(r.title || '')}<br><span>${esc([...new Set(p.rs.filter(x => x.project_id === r.project_id && x.area === r.area).map(x => [x.type, x.table].filter(Boolean).join(', ')))].join(' · '))}</span></div>`).join('') + `<p class="see">Figures: page ${npg} and the Excel file.</p>`; };
