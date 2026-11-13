@@ -602,6 +602,7 @@ async function mapPdf(o) {
     const POLY = ['==', ['geometry-type'], 'Polygon'];
     map.setFilter('drawn-case', POLY); map.setFilter('drawn-line', POLY); map.setLayoutProperty('drawn-buf', 'visibility', 'none'); map.setPaintProperty('drawn-fill', 'fill-opacity', .1);
     map.setLayoutProperty('labels', 'text-size', 15); map.setPaintProperty('labels', 'text-halo-width', 2.5);
+    map.moveLayer('labels');   // project labels above the bold filter shapes, so the dashes do not cut through them
     select(null); $('map').style.cssText += `;position:fixed;left:0;top:0;width:${pxW}px;height:${pxH}px;z-index:-1`; map.setPixelRatio(2); map.resize();
     for (const g of groups) {
       const ids = new Set(g.map(m => m.id)), rs = rows.filter(r => ids.has(r.map));
@@ -619,6 +620,7 @@ async function mapPdf(o) {
     if (hdBase) { vis('imageryhd', false); vis('imagery', true); }
     map.setFilter('drawn-case', ['!', ['has', 'buf']]); map.setFilter('drawn-line', ['!', ['has', 'buf']]); map.setLayoutProperty('drawn-buf', 'visibility', 'visible'); map.setPaintProperty('drawn-fill', 'fill-opacity', .16);
     map.setLayoutProperty('labels', 'text-size', 11); map.setPaintProperty('labels', 'text-halo-width', 2);
+    DRAWN.forEach(id => map.moveLayer(id));   // back to the screen order: drawn shapes above the labels
     MAPON.clear(); keep.mapon.forEach(m => MAPON.add(m)); IMGON.clear(); keep.imgon.forEach(m => IMGON.add(m));
     Object.entries(keep.opac).forEach(([m, v]) => map.setPaintProperty('img-' + m, 'raster-opacity', v));
     $('map').style.cssText = keep.css; map.setPixelRatio(keep.pr); map.resize(); map.jumpTo({center: keep.center, zoom: keep.zoom, bearing: keep.bearing}); applyVis(); if (keep.sel) select(keep.sel, {zoom: false});
@@ -668,7 +670,7 @@ $('bPdf').onclick = () => {
   document.body.appendChild(m); $('pCancel').onclick = () => m.remove(); $('pT').focus();
   $('pGo').onclick = async () => {
     const title = $('pT').value.trim() || 'Contribution plan projects', ref = $('pR').value.trim() || 'Map';
-    const slug = (ref + ' ' + title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 70), baseName = `${slug}-${new Date().toISOString().slice(0, 10)}`;
+    const slug = (ref + ' ' + title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 110), baseName = `${slug}-${new Date().toISOString().slice(0, 10)}`;
     $('pMsg').textContent = 'Drawing the map… (a few seconds per page)'; $('pGo').disabled = true;
     try {
       const o = {title, ref, base: baseName, paper: $('pP').value, perMap: $('pM').checked, printed: $('pI').checked, transp: Math.min(95, Math.max(0, +$('pTr').value || 0))};
