@@ -594,7 +594,8 @@ async function mapPdf(o) {
   const pages = [], areasIn = [...new Set(rows.map(r => r.area))], swapped = [], hdBase = ['imagery', 'hybrid'].includes($('base').value);
   if (!SNAP) await Promise.all(areasIn.filter(a => !window.PRINTIMG?.[a]).map(a => loadScript(a + '/print.js')));   // full-resolution plan images (app/<area>/print.js)
   try {
-    for (const m of D.maps) { const hd = window.PRINTIMG?.[m.area]?.[m.id.split(':')[1]]; if (hd && D.images[m.id]) { map.getSource('img-' + m.id).updateImage({url: hd.img, coordinates: hd.coords}); swapped.push(m.id); } }
+    // only the plans printed get the full-resolution image (a hidden one would still be loading when restored)
+    for (const m of maps) { const hd = window.PRINTIMG?.[m.area]?.[m.id.split(':')[1]]; if (hd && D.images[m.id]) { map.getSource('img-' + m.id).updateImage({url: hd.img, coordinates: hd.coords}); swapped.push(m.id); } }
     if (hdBase) { vis('imageryhd', true); vis('imagery', false); }
     // print style (owner, 2026-11-13): filter shapes bold and on top – areas and line buffers as bold cyan-on-dark outlines; a line's
     // centre line is left out so it does not cover the project inside its buffer; light fill. Larger project labels.
@@ -608,7 +609,7 @@ async function mapPdf(o) {
       g.forEach(m => D.images[m.id] && map.setPaintProperty('img-' + m.id, 'raster-opacity', 1 - o.transp / 100));
       applyVis();
       const fs = rs.flatMap(r => FBYKEY[r.key] || []).concat(SHAPES.map(x => x.area)), b = bboxOf(fs);
-      map.fitBounds([[b[0], b[1]], [b[2], b[3]]], {padding: 60, duration: 0, bearing: 0}); await mapIdle(); await mapIdle(4000);
+      map.fitBounds([[b[0], b[1]], [b[2], b[3]]], {padding: {top: 80, right: 80, bottom: 130, left: 80}, duration: 0, bearing: 0}); await mapIdle(); await mapIdle(4000);   // more room at the bottom for the scale bar
       const img = await grab(), lat = map.getCenter().lat, mPerPx = 40075016.686 * Math.cos(lat * Math.PI / 180) / (512 * Math.pow(2, map.getZoom()));
       const mPerMm = mPerPx * pxW / fw, cls = [...new Set(rs.flatMap(r => (FBYKEY[r.key] || []).map(f => f.properties.cls)))].filter(k => CLS[k] && classShown(k));
       pages.push({g, rs, img, mPerMm, cls, scale: Math.round(mPerMm * 1000 / 500) * 500});
