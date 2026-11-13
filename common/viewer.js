@@ -603,6 +603,7 @@ async function mapPdf(o) {
     map.setFilter('drawn-case', POLY); map.setFilter('drawn-line', POLY); map.setLayoutProperty('drawn-buf', 'visibility', 'none'); map.setPaintProperty('drawn-fill', 'fill-opacity', .1);
     map.setLayoutProperty('labels', 'text-size', 15); map.setPaintProperty('labels', 'text-halo-width', 2.5);
     map.moveLayer('labels');   // project labels above the bold filter shapes, so the dashes do not cut through them
+    map.setLayoutProperty('labels', 'text-allow-overlap', true); map.setLayoutProperty('labels', 'text-variable-anchor', ['top', 'bottom', 'left', 'right']); map.setLayoutProperty('labels', 'text-radial-offset', 1.1);   // every project's ID prints, even where projects share a spot
     select(null); $('map').style.cssText += `;position:fixed;left:0;top:0;width:${pxW}px;height:${pxH}px;z-index:-1`; map.setPixelRatio(2); map.resize();
     for (const g of groups) {
       const ids = new Set(g.map(m => m.id)), rs = rows.filter(r => ids.has(r.map));
@@ -621,6 +622,7 @@ async function mapPdf(o) {
     map.setFilter('drawn-case', ['!', ['has', 'buf']]); map.setFilter('drawn-line', ['!', ['has', 'buf']]); map.setLayoutProperty('drawn-buf', 'visibility', 'visible'); map.setPaintProperty('drawn-fill', 'fill-opacity', .16);
     map.setLayoutProperty('labels', 'text-size', 11); map.setPaintProperty('labels', 'text-halo-width', 2);
     DRAWN.forEach(id => map.moveLayer(id));   // back to the screen order: drawn shapes above the labels
+    map.setLayoutProperty('labels', 'text-allow-overlap', false); map.setLayoutProperty('labels', 'text-variable-anchor', undefined); map.setLayoutProperty('labels', 'text-radial-offset', undefined);
     MAPON.clear(); keep.mapon.forEach(m => MAPON.add(m)); IMGON.clear(); keep.imgon.forEach(m => IMGON.add(m));
     Object.entries(keep.opac).forEach(([m, v]) => map.setPaintProperty('img-' + m, 'raster-opacity', v));
     $('map').style.cssText = keep.css; map.setPixelRatio(keep.pr); map.resize(); map.jumpTo({center: keep.center, zoom: keep.zoom, bearing: keep.bearing}); applyVis(); if (keep.sel) select(keep.sel, {zoom: false});
