@@ -99,6 +99,7 @@ document.body.innerHTML = `
       <button class="btn primary" id="bExpF" title="Excel in your register schema: the rows the table shows now (search, plan map, categories, map view and drawn-shape filters, in table order). With no filter, every row of the plan areas switched on.">Export to Excel</button>
       <button class="btn" id="bImp" title="Restore edits from a file this app made: an Excel export (all edited columns, matched by Row ID) or a Changes for repo file (edits and added shapes)">Import edits</button><input type="file" id="fImp" accept=".xlsx,.geojson,.json" hidden>
       <button class="btn" id="bChg" title="Download your edits and added features for the repository: save into gis/edit/inbox/ and push (see docs/EDITING.md)">Changes for repo</button>
+      <button class="btn" id="bPdf" title="A printable map (PDF) of the rows shown – imagery, street names, the printed plan faintly underneath, your drawn shapes, legend, scale and a table of the rows – and the matching Excel file, linked">Map PDF</button>
       <button class="btn" id="bSnap" title="Save one HTML file with the map and table of the rows shown now (your drawn features and edits included), read-only, for colleagues: it opens in any browser, no repository or website needed">Snapshot</button>
       <button class="btn" id="bGis" title="Download the shapes of the rows shown, with their table attributes and your edits, as GeoJSON (opens in QGIS; save as shapefile or GeoPackage there)">GIS export</button>
     </div>
@@ -328,7 +329,7 @@ function printedTwice(rows) {   // a project printed in full in more than one ta
   return [['Printed twice', dup.map(rs => `${rs[0].project_id} is printed in full in ${rs.length} tables (${rs.map(r => r.table).join(', ')}): ${money(rs[0].total_cost_aud)} on each row, as printed. It is one project – count it once.`).join(' ')],
           ['Construction sum', `Adding the Construction cost column gives ${money(all)}; counting each project once gives ${money(all - extra)}.`]];
 }
-function exportXlsx(rows, label) {
+function exportXlsx(rows, label, opt = {}) {   // opt: {file, map: 'Map 1 – title', pdf: 'file.pdf'} when made with a Map PDF
   // the owner's register layout, plus "Construction / land" after "Levy component" (owner's request, 2026-11-12)
   const E = D.export, at = E.fields.indexOf('component') + 1, ins = (a, x) => [...a.slice(0, at), x, ...a.slice(at)];
   const aoa = [ins(E.columns, 'Construction / land')], today = new Date().toISOString().slice(0, 10);
@@ -344,13 +345,22 @@ function exportXlsx(rows, label) {
   for (const [k, t] of Object.entries(D.tables)) if ([...areasIn].some(a => k.startsWith(a + ' '))) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(t), k.slice(0, 31));
   const n = XLSX.utils.aoa_to_sheet([['Casey Fields Boulevard – contribution plans: project register export'], ['Exported', today], ['Rows', rows.length + ' (' + label + ')'],
     ['Plan areas', [...areasIn].join(', ')],
-    ['Filters', [$('q').value && 'ID "' + $('q').value + '"', $('mapF').value && 'plan map: ' + $('mapF').selectedOptions[0].text, CATON.size && 'categories: ' + [...CATON].join(', '), $('fView').checked && 'in map view'].filter(Boolean).join('; ') || 'none'],
+    ['Filters', filterText() || 'none'],
+    ...(opt.map ? [['Map', opt.map], ['Map PDF', opt.pdf + ' (same rows; keep the two files together in one folder – the link opens it)']] : []),
     ...AREAS.filter(a => [...areasIn].includes(a.short)).map(a => [a.short, a.source + (a.note ? ' – ' + a.note : '')]),
     ['AI use', 'Prepared with generative AI assistance (Claude Code, Anthropic) from public plan documents and open data, and reviewed by the owner. Shapes are approximate: check them against the gazetted plan; not for levy, works-in-kind or land-acquisition decisions. See docs/AI_USE.md.'],
     ...printedTwice(rows),
     ['Edits', 'Values edited in the app are used throughout (Details sheet shows every column). "Import edits" restores them from this file.']]);
   n['!cols'] = [{wch: 14}, {wch: 120}]; XLSX.utils.book_append_sheet(wb, n, 'About');
-  XLSX.writeFile(wb, `casey-fields-blvd-projects-${today}.xlsx`);
+  if (opt.pdf) for (const [addr, cell] of Object.entries(n)) if (addr[0] === 'B' && typeof cell.v === 'string' && cell.v.startsWith(opt.pdf)) cell.l = {Target: opt.pdf, Tooltip: 'Open the map PDF'};
+  XLSX.writeFile(wb, opt.file || `casey-fields-blvd-projects-${today}.xlsx`);
+}
+function filterText() {   // the table's filters in words (Excel About sheet, map PDF)
+  const off = D.maps.filter(m => AON.has(m.area) && !MAPON.has(m.id)).map(m => m.title.split(' · ')[0]);
+  const nA = SHAPES.filter(x => !x.line).length, nL = SHAPES.length - nA;
+  return [$('q').value && 'ID "' + $('q').value + '"', $('mapF').value && 'plan map: ' + $('mapF').selectedOptions[0].text, CATON.size && 'categories: ' + [...CATON].join(', '), $('fView').checked && 'in map view',
+    SHAPES.length && 'drawn on the map: ' + [nA && nA + ' area' + (nA > 1 ? 's' : ''), nL && nL + ' line' + (nL > 1 ? 's' : '') + ' (± ' + [...new Set(SHAPES.filter(x => x.line).map(x => x.buf))].join(' / ') + ' m)'].filter(Boolean).join(' and ') + ' – projects touching any of them',
+    off.length && 'plan maps off: ' + off.join(', ')].filter(Boolean).join('; ');
 }
 $('bExpF').onclick = () => { const rs = filtered(); exportXlsx(rs, rs.length === ROWS.filter(r => AON.has(r.area)).length ? 'all rows of the plan areas shown' : 'rows shown by the table filters'); };
 $('bGis').onclick = () => {   // GeoJSON: every project shape with its table attributes (edits included), one feature per table row; opens in QGIS
@@ -555,6 +565,112 @@ $('bSnap').onclick = () => {
 if (SNAP) { document.body.classList.add('snapshot'); (SNAP.imgs || []).forEach(m => D.images[m] && IMGON.add(m)); applyVis();
   if (SNAP.shapes?.length) map.on('load', () => { SHAPES = SNAP.shapes.slice(); applyShapes(); render(); });   // the sender's drawn filter shapes
   if (SNAP.note) setTimeout(() => { const d = document.createElement('div'); d.className = 'snapbanner card'; d.innerHTML = `<b>Note from the sender:</b> ${esc(SNAP.note)} <button class="btn" title="Close">✕</button>`; d.querySelector('button').onclick = () => d.remove(); $('map').appendChild(d); }, 0); }
-window.APP = {map, select, get SHAPES() { return SHAPES; }, get READY() { return READY; }, get SEL() { return SEL; }, FBYKEY, AON, IMGON, MAPON, applyVis};
+// ---------- Map PDF: a printable map of the rows shown, with the matching Excel file ----------
+// One map page per plan map with rows (or one page for all), each over the basemap chosen (imagery + street names
+// recommended) with that plan's printed map faintly underneath, the drawn filter shapes, legend, scale and north arrow;
+// then a table of the rows (same rows and Row IDs as the Excel file). The browser's Print → Save as PDF makes the file.
+const DRAWN = ['drawn-fill', 'drawn-buf', 'drawn-case', 'drawn-line', 'drawn-pt'];   // the drawn-shape layers, bottom to top
+const PAPER = {a3: {w: 420, h: 297, label: 'A3 landscape'}, a4: {w: 297, h: 210, label: 'A4 landscape'}};
+const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+async function mapIdle(ms = 20000) {   // wait until tiles and images are drawn
+  await new Promise(r => { let done = false; const fin = () => { if (!done) { done = true; r(); } }; map.once('idle', fin); map.triggerRepaint(); setTimeout(fin, ms); });
+  await nextFrame();
+}
+const grab = () => new Promise(r => { map.once('render', () => r(map.getCanvas().toDataURL('image/jpeg', 0.9))); map.triggerRepaint(); });
+function niceScale(mPerMm) {   // scale bar of about 40 mm, with a round length
+  const target = 40 * mPerMm, p = Math.pow(10, Math.floor(Math.log10(target))), len = [1, 2, 5, 10].map(x => x * p).filter(x => x <= target).pop();
+  return {len, mm: len / mPerMm, label: len >= 1000 ? len / 1000 + ' km' : len + ' m'};
+}
+async function mapPdf(o) {
+  const rows = filtered(); if (!rows.length) throw new Error('No rows shown');
+  const P = PAPER[o.paper] || PAPER.a3, pg = {w: P.w - 17, h: P.h - 17}, side = o.paper === 'a4' ? 78 : 96, head = 17, foot = o.paper === 'a4' ? 15 : 13;
+  const fw = pg.w - side - 4, fh = pg.h - head - foot - 4;                  // map frame (mm)
+  const pxW = 1150, pxH = Math.round(pxW * fh / fw);                         // map canvas (CSS px) with the frame's shape
+  const maps = D.maps.filter(m => rows.some(r => r.map === m.id)), groups = o.perMap ? maps.map(m => [m]) : [maps];
+  const keep = {mapon: new Set(MAPON), imgon: new Set(IMGON), sel: SEL, center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pr: map.getPixelRatio(), css: $('map').style.cssText,
+    opac: Object.fromEntries(Object.keys(D.images).map(m => [m, map.getPaintProperty('img-' + m, 'raster-opacity')]))};
+  const pages = [];
+  try {
+    // print style: filter shapes go under the projects as a thin outline (they must not hide them); larger project labels
+    const below = LIDS.find(([, k]) => !CLS[k].context)?.[0];
+    if (below) DRAWN.forEach(id => map.moveLayer(id, below));
+    map.setLayoutProperty('drawn-case', 'visibility', 'none'); map.setPaintProperty('drawn-line', 'line-width', 1.8); map.setPaintProperty('drawn-fill', 'fill-opacity', .08);
+    map.setLayoutProperty('labels', 'text-size', 15); map.setPaintProperty('labels', 'text-halo-width', 2.5);
+    select(null); $('map').style.cssText += `;position:fixed;left:0;top:0;width:${pxW}px;height:${pxH}px;z-index:-1`; map.setPixelRatio(2); map.resize();
+    for (const g of groups) {
+      const ids = new Set(g.map(m => m.id)), rs = rows.filter(r => ids.has(r.map));
+      MAPON.clear(); g.forEach(m => MAPON.add(m.id)); IMGON.clear(); if (o.printed) g.forEach(m => D.images[m.id] && IMGON.add(m.id));
+      g.forEach(m => D.images[m.id] && map.setPaintProperty('img-' + m.id, 'raster-opacity', 1 - o.transp / 100));
+      applyVis();
+      const fs = rs.flatMap(r => FBYKEY[r.key] || []).concat(SHAPES.map(x => x.area)), b = bboxOf(fs);
+      map.fitBounds([[b[0], b[1]], [b[2], b[3]]], {padding: 60, duration: 0, bearing: 0}); await mapIdle(); await mapIdle(4000);
+      const img = await grab(), lat = map.getCenter().lat, mPerPx = 40075016.686 * Math.cos(lat * Math.PI / 180) / (512 * Math.pow(2, map.getZoom()));
+      const mPerMm = mPerPx * pxW / fw, cls = [...new Set(rs.flatMap(r => (FBYKEY[r.key] || []).map(f => f.properties.cls)))].filter(k => CLS[k] && classShown(k));
+      pages.push({g, rs, img, mPerMm, cls, scale: Math.round(mPerMm * 1000 / 500) * 500});
+    }
+  } finally {
+    DRAWN.forEach(id => map.moveLayer(id)); map.setLayoutProperty('drawn-case', 'visibility', 'visible'); map.setPaintProperty('drawn-line', 'line-width', 3); map.setPaintProperty('drawn-fill', 'fill-opacity', .16);
+    map.setLayoutProperty('labels', 'text-size', 11); map.setPaintProperty('labels', 'text-halo-width', 2);
+    MAPON.clear(); keep.mapon.forEach(m => MAPON.add(m)); IMGON.clear(); keep.imgon.forEach(m => IMGON.add(m));
+    Object.entries(keep.opac).forEach(([m, v]) => map.setPaintProperty('img-' + m, 'raster-opacity', v));
+    $('map').style.cssText = keep.css; map.setPixelRatio(keep.pr); map.resize(); map.jumpTo({center: keep.center, zoom: keep.zoom, bearing: keep.bearing}); applyVis(); if (keep.sel) select(keep.sel, {zoom: false});
+  }
+  // ---- the printout ----
+  const made = new Date(), date = made.toLocaleDateString('en-AU', {day: 'numeric', month: 'long', year: 'numeric'});
+  const areas = [...new Set(rows.map(r => r.area))], plans = areas.map(a => AREA[a].name).join(', ');
+  const base = $('base').value, baseTxt = {hybrid: 'Esri World Imagery with Esri reference layers (roads, places)', imagery: 'Esri World Imagery', streets: 'Esri World Street Map', none: 'no basemap'}[base];
+  const flt = filterText(), npg = pages.length + 1;
+  const fig = (r, k) => fmtv(val(r, k), (D.columns.find(c => c.k === k) || {}).t);
+  const head1 = (title, sub, i) => `<div class="ph"><div><h1>${esc(o.title)}</h1><p>${esc(sub)}</p></div><div class="pr"><b>${esc(o.ref)}</b><br>${esc(date)} · page ${i} of ${npg}</div></div>`;
+  const footer = `<div class="pf"><p><b>Working aid, not an official record.</b> Projects and figures as printed in ${esc(plans)}; mapped shapes are approximate – check against the gazetted plan. Not for levy, works-in-kind or land-acquisition decisions.
+    <b>Use of generative AI:</b> prepared with generative AI assistance (Claude Code, Anthropic) from public plan documents and open data, reviewed by the owner.</p>
+    <p>Sources: ${esc(areas.map(a => AREA[a].source).join('; '))}; VPA precinct boundaries and Vicmap (CC BY 4.0); roads © OpenStreetMap contributors / Overture (ODbL); basemap: ${esc(baseTxt)} (Esri, Maxar, Earthstar Geographics, HERE, Garmin, © OpenStreetMap contributors). Linked file: <b>${esc(o.base)}.xlsx</b> (same rows; Row ID).</p></div>`;
+  const legend = p => `<h3>Legend</h3>${p.cls.map(k => `<div class="lg"><span class="sw">${swatch(CLS[k])}</span>${esc(CLS[k].label)}</div>`).join('')}
+    ${SHAPES.length ? `<div class="lg"><span class="sw"><svg width="22" height="12"><rect x="1" y="1" width="20" height="10" fill="#00e5ff" fill-opacity=".2" stroke="#062a33" stroke-width="2.5"/><rect x="1" y="1" width="20" height="10" fill="none" stroke="#00e5ff" stroke-width="1.4" stroke-dasharray="3 2"/></svg></span>Drawn filter shapes (projects touching them are shown)</div>` : ''}
+    ${o.printed && p.g.some(m => D.images[m.id]) ? `<div class="lg"><span class="sw"><svg width="22" height="12"><rect x="1" y="1" width="20" height="10" fill="#c9b8a6" fill-opacity=".5" stroke="#999"/></svg></span>Printed plan underneath, ${o.transp}% transparent: ${esc(p.g.map(m => m.title.split(' · ')[0]).join(', '))}</div>` : ''}`;
+  const plist = p => { const seen = new Set(); return `<h3>Projects on this map</h3>` + p.rs.filter(r => !seen.has(r.area + r.project_id) && seen.add(r.area + r.project_id)).map(r =>
+    `<div class="pj"><b>${esc(r.project_id)}</b> ${esc(r.title || '')}<br><span>${esc([...new Set(p.rs.filter(x => x.project_id === r.project_id && x.area === r.area).map(x => [x.type, x.table].filter(Boolean).join(', ')))].join(' · '))}</span></div>`).join('') + `<p class="see">Figures: page ${npg} and the Excel file.</p>`; };
+  const html = pages.map((p, i) => { const sb = niceScale(p.mPerMm);
+    return `<section class="pp" style="width:${pg.w}mm;height:${pg.h}mm">${head1(o.title, `${plans} · ${p.g.map(m => m.title).join(' + ')}`, i + 1)}
+    <div class="pb"><div class="mf" style="width:${fw}mm;height:${fh}mm"><img src="${p.img}">
+      <div class="na"><svg width="26" height="34" viewBox="0 0 26 34"><path d="M13 2 L22 26 L13 21 L4 26 Z" fill="#17222b" stroke="#fff" stroke-width="1.2"/><text x="13" y="33" text-anchor="middle" font-size="8" font-weight="700" fill="#17222b" stroke="#fff" stroke-width=".5">N</text></svg></div>
+      <div class="sb"><div class="bar" style="width:${sb.mm}mm"></div><span>0</span><span style="margin-left:${sb.mm - 3}mm">${sb.label}</span><em>about 1:${p.scale.toLocaleString('en-AU')} at ${PAPER[o.paper].label}</em></div></div>
+      <aside class="ps" style="width:${side}mm;height:${fh}mm">${legend(p)}${plist(p)}${flt ? `<h3>Filter</h3><p>${esc(flt)}</p>` : ''}</aside></div>${footer}</section>`; }).join('');
+  const cost = r => r.area === 'croskell' ? 'cost_to_icp_aud' : 'cost_to_mca_aud';
+  const twice = printedTwice(rows).map(([k, v]) => `<p><b>${esc(k)}:</b> ${esc(v)}</p>`).join('');
+  const table = `<section class="pp" style="width:${pg.w}mm;height:${pg.h}mm">${head1(o.title, 'Rows on the maps – figures as printed in the plan tables', npg)}
+    <table class="pt"><thead><tr><th>Project ID</th><th>Construction / land</th><th>Levy component</th><th>Table</th><th>Title</th><th>Land ha</th><th>Total cost</th><th>To ICP / MCA</th><th>Map page</th><th>Row ID (Excel)</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td><b>${esc(r.project_id)}</b></td><td>${esc(r.type || '')}</td><td>${esc(r.component || '')}</td><td>${esc(r.table || '')}</td><td>${esc(r.title || '')}</td><td class="n">${fig(r, 'land_ha')}</td><td class="n">${fig(r, 'total_cost_aud')}</td><td class="n">${fig(r, cost(r))}</td><td class="n">${pages.findIndex(p => p.rs.includes(r)) + 1}</td><td class="rid">${esc(r.rid.split(':').slice(1).join(':'))}</td></tr>`).join('')}</tbody></table>
+    <div class="nt">${twice}<p>${rows.length} rows${flt ? ' · filter: ' + esc(flt) : ''}. The Excel file <b>${esc(o.base)}.xlsx</b> has the same rows in the register layout, with every column on its Details sheet (Row ID).</p></div>${footer}</section>`;
+  let po = $('printout'); if (!po) { po = document.createElement('div'); po.id = 'printout'; document.body.appendChild(po); }
+  po.innerHTML = `<style>@page{size:${P.w}mm ${P.h}mm;margin:8mm}</style>` + html + table;
+  await Promise.all([...po.querySelectorAll('img')].map(im => im.decode().catch(() => {})));
+  return {pages: npg, rows: rows.length};
+}
+$('bPdf').onclick = () => {
+  const rows = filtered(); if (!rows.length) return alert('No rows shown: nothing to map.');
+  const maps = D.maps.filter(m => rows.some(r => r.map === m.id)), tr = Math.max(+$('opac').value, 55);
+  const m = document.createElement('div'); m.id = 'modal'; m.innerHTML = `<div class="dlg card"><h2>Map PDF</h2>
+    <p class="fit">A printable map of the <b>${rows.length} rows shown</b> (${maps.length} plan map${maps.length > 1 ? 's' : ''}), with your drawn shapes, on the basemap chosen now (<b>${esc($('base').selectedOptions[0].text)}</b>), and a table of the rows. The matching Excel file is saved at the same time; keep both in one folder.</p>
+    <div class="grid"><label class="w">Title<input id="pT" placeholder="e.g. Casey Fields Boulevard – Thompsons Road to Linsell Boulevard"></label>
+    <label>Map reference<input id="pR" value="Map 1"></label><label>Paper<select id="pP"><option value="a3">A3 landscape</option><option value="a4">A4 landscape</option></select></label>
+    <label class="w" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="pM" ${maps.length > 1 ? 'checked' : ''} style="width:auto"> One page per plan map (printed plans do not overlap)</label>
+    <label class="w" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="pI" checked style="width:auto"> Printed plan underneath, <input id="pTr" type="number" min="0" max="95" step="5" value="${tr}" style="width:64px"> % transparent</label></div>
+    <p class="fit" id="pMsg"></p><div class="actions" style="justify-content:flex-end"><button class="btn" id="pCancel">Cancel</button><button class="btn primary" id="pGo">Make PDF + Excel</button></div></div>`;
+  document.body.appendChild(m); $('pCancel').onclick = () => m.remove(); $('pT').focus();
+  $('pGo').onclick = async () => {
+    const title = $('pT').value.trim() || 'Contribution plan projects', ref = $('pR').value.trim() || 'Map';
+    const slug = (ref + ' ' + title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 70), baseName = `${slug}-${new Date().toISOString().slice(0, 10)}`;
+    $('pMsg').textContent = 'Drawing the map… (a few seconds per page)'; $('pGo').disabled = true;
+    try {
+      const o = {title, ref, base: baseName, paper: $('pP').value, perMap: $('pM').checked, printed: $('pI').checked, transp: Math.min(95, Math.max(0, +$('pTr').value || 0))};
+      await mapPdf(o);
+      exportXlsx(rows, 'rows on ' + ref, {file: baseName + '.xlsx', map: `${ref} – ${title}`, pdf: baseName + '.pdf'});
+      m.remove(); const t = document.title; document.title = baseName;   // the browser suggests the title as the PDF's file name
+      setTimeout(() => { window.print(); document.title = t; }, 300);
+    } catch (e) { $('pMsg').textContent = 'Could not make the map: ' + e.message + (/tainted|insecure/i.test(e.message) ? ' (the basemap server does not allow printing; choose another basemap)' : ''); $('pGo').disabled = false; }
+  };
+};
+window.APP = {map, select, mapPdf, setShapes: g => { SHAPES = g; applyShapes(); render(); }, get SHAPES() { return SHAPES; }, get READY() { return READY; }, get SEL() { return SEL; }, FBYKEY, AON, IMGON, MAPON, applyVis};
 applyVis();
 })();
