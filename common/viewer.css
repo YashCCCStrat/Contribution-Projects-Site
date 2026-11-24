@@ -189,6 +189,6 @@ body.snapshot #drawbar .sep, body.snapshot #drawbar .sep ~ .dl, body.snapshot #d
   .pj{margin:0 0 1.6mm;break-inside:avoid}.pj span{color:#47555f;font-size:7.2pt}.see{color:#47555f;font-size:7.2pt}
   .pf{margin-top:auto;border-top:.6pt solid #c8d0d6;padding-top:1.5mm;font-size:6.6pt;color:#47555f}.pf p{margin:0 0 .8mm}
   .pt{border-collapse:collapse;width:100%;font-size:7.8pt}.pt th{background:#e9eef1;text-align:left;padding:1.4mm 1.6mm;border-bottom:.8pt solid #17222b}
-  .pt td{padding:1.3mm 1.6mm;border-bottom:.4pt solid #d6dde2;vertical-align:top}.pt .n{text-align:right;white-space:nowrap}.pt .rid{font-size:6.8pt;color:#47555f}
+  .pt td{padding:1.3mm 1.6mm;border-bottom:.4pt solid #d6dde2;vertical-align:top}.pt td.d{width:150mm}.pt .n{text-align:right;white-space:nowrap}.pt .rid{font-size:6.8pt;color:#47555f}
   .nt{font-size:7.8pt;margin-top:3mm}.nt p{margin:0 0 1.5mm}
 }

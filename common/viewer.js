@@ -658,10 +658,12 @@ async function mapPdf(o) {
   const cost = r => r.area === 'croskell' ? 'cost_to_icp_aud' : 'cost_to_mca_aud';
   const twice = o.costs ? printedTwice(rows).map(([k, v]) => `<p><b>${esc(k)}:</b> ${esc(v)}</p>`).join('') : '';
   // table page columns; without costs (o.costs false): no levy component, total cost or cost to ICP / MCA
-  const TC = [['Project ID', r => `<b>${esc(r.project_id)}</b>`], ['Construction / land', r => esc(r.type || '')], ...(o.costs ? [['Levy component', r => esc(r.component || '')]] : []),
-    ['Table', r => esc(r.table || '')], ['Title', r => esc(r.title || '')], ['Land ha', r => fig(r, 'land_ha'), 'n'],
+  // project description as in the Excel register: title – description (the title alone where the plan gives no separate description)
+  const pdesc = r => { const t = val(r, 'title') || '', d = val(r, 'description') || ''; return d && d !== t ? `${t} – ${d}` : t; };
+  const TC = [['Project ID', r => `<b>${esc(r.project_id)}</b>`], ['Category', r => esc(val(r, 'category') || '')], ['Construction / land', r => esc(r.type || '')], ...(o.costs ? [['Levy component', r => esc(r.component || '')]] : []),
+    ['Project description', r => esc(pdesc(r)), 'd'], ['Land ha', r => fig(r, 'land_ha'), 'n'],
     ...(o.costs ? [['Total cost', r => fig(r, 'total_cost_aud'), 'n'], ['To ICP / MCA', r => fig(r, cost(r)), 'n']] : []),
-    ['Map page', r => pages.findIndex(p => p.rs.includes(r)) + 1, 'n'], ['Row ID (Excel)', r => esc(r.rid.split(':').slice(1).join(':')), 'rid']];
+    ['Map page', r => pages.findIndex(p => p.rs.includes(r)) + 1, 'n'], ['Row ID (Excel)', r => esc(r.rid.split(':').slice(1).join(':')), 'rid']];   // owner 2026-11-24: no Table column; Category and Project description added
   const table = `<section class="pp" style="width:${pg.w}mm;height:${pg.h}mm">${head1(o.title, o.costs ? 'Rows on the maps – figures as printed in the plan tables' : 'Rows on the maps – as printed in the plan tables', npg)}
     <table class="pt"><thead><tr>${TC.map(([h, , c]) => `<th${c === 'n' ? ' class="n"' : ''}>${h}</th>`).join('')}</tr></thead><tbody>
     ${rows.map(r => '<tr>' + TC.map(([, f, c]) => `<td${c ? ` class="${c}"` : ''}>${f(r)}</td>`).join('') + '</tr>').join('')}</tbody></table>
