@@ -111,17 +111,33 @@ document.body.innerHTML = `
 const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0)).buffer;
 maplibregl.addProtocol('glyphs', async p => { const k = p.url.split('/').pop().replace('.pbf', ''); return {data: window.GLYPHS?.[k] ? b64(window.GLYPHS[k]) : new ArrayBuffer(0)}; });
 const ESRI = n => `https://server.arcgisonline.com/ArcGIS/rest/services/${n}/MapServer/tile/{z}/{y}/{x}`;
-const map = new maplibregl.Map({container: 'map', attributionControl: {compact: true}, center: [145.33, -38.10], zoom: 13.5, maxZoom: 19,
+const map = new maplibregl.Map({container: 'map', attributionControl: {compact: true}, center: [145.33, -38.10], zoom: 13.5, maxZoom: 19, maxCanvasSize: [8192, 8192],   // room for high-resolution Map PDF
   style: {version: 8, glyphs: 'glyphs://{fontstack}/{range}', sources: {
     imagery: {type: 'raster', tiles: [ESRI('World_Imagery')], tileSize: 256, maxzoom: 19, attribution: 'Esri World Imagery'},
     imageryhd: {type: 'raster', tiles: [ESRI('World_Imagery')], tileSize: 128, maxzoom: 19, attribution: 'Esri World Imagery'},   // Map PDF only: tiles one zoom level deeper (twice the detail)
     streets: {type: 'raster', tiles: [ESRI('World_Street_Map')], tileSize: 256, maxzoom: 19, attribution: 'Esri, © OpenStreetMap contributors'},
     // "Imagery + street names": Esri's reference overlays (roads with names; suburbs and places) over the imagery, as in Esri's Hybrid basemap
     roads: {type: 'raster', tiles: [ESRI('Reference/World_Transportation')], tileSize: 256, maxzoom: 19, attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors'},
-    places: {type: 'raster', tiles: [ESRI('Reference/World_Boundaries_and_Places')], tileSize: 256, maxzoom: 19, attribution: 'Esri'}},
+    places: {type: 'raster', tiles: [ESRI('Reference/World_Boundaries_and_Places')], tileSize: 256, maxzoom: 19, attribution: 'Esri'},
+    // high-resolution Map PDF only: imagery two zoom levels deeper, street names one level deeper (more streets named, crisp when zoomed into the PDF)
+    imageryuhd: {type: 'raster', tiles: [ESRI('World_Imagery')], tileSize: 64, maxzoom: 19, attribution: 'Esri World Imagery'},
+    roadshd: {type: 'raster', tiles: [ESRI('Reference/World_Transportation')], tileSize: 128, maxzoom: 19, attribution: 'Esri, HERE, Garmin, © OpenStreetMap contributors'},
+    placeshd: {type: 'raster', tiles: [ESRI('Reference/World_Boundaries_and_Places')], tileSize: 128, maxzoom: 19, attribution: 'Esri'}},
     layers: [{id: 'bg', type: 'background', paint: {'background-color': '#eef0ec'}}, {id: 'imagery', type: 'raster', source: 'imagery'}, {id: 'imageryhd', type: 'raster', source: 'imageryhd', layout: {visibility: 'none'}}, {id: 'streets', type: 'raster', source: 'streets', layout: {visibility: 'none'}},
-      {id: 'roads', type: 'raster', source: 'roads', layout: {visibility: 'none'}}, {id: 'places', type: 'raster', source: 'places', layout: {visibility: 'none'}}]}});
+      {id: 'roads', type: 'raster', source: 'roads', layout: {visibility: 'none'}}, {id: 'places', type: 'raster', source: 'places', layout: {visibility: 'none'}},
+      {id: 'imageryuhd', type: 'raster', source: 'imageryuhd', layout: {visibility: 'none'}}, {id: 'roadshd', type: 'raster', source: 'roadshd', layout: {visibility: 'none'}}, {id: 'placeshd', type: 'raster', source: 'placeshd', layout: {visibility: 'none'}}]}});
+map.on('load', () => { map.moveLayer('imageryuhd', 'streets'); });
 map.addControl(new maplibregl.NavigationControl({showCompass: false}), 'top-right');
+// north indicator: turns with the map; click = north up. Rotate: right-click and drag, Ctrl + drag, or two fingers
+class NorthControl {
+  onAdd(m) { this.m = m; const d = this.el = document.createElement('div'); d.className = 'maplibregl-ctrl maplibregl-ctrl-group northctl';
+    d.innerHTML = `<button type="button" title="North. Rotate the map: right-click and drag, or Ctrl + drag (two fingers on a touch screen). Click to put north back up." aria-label="North up"><svg viewBox="0 0 30 30" width="30" height="30"><g class="nr"><path d="M15 3 L21 17 L15 14 L9 17 Z" fill="#c62828"/><path d="M15 27 L21 17 L15 20 L9 17 Z" fill="#9aa5ad"/><text x="15" y="12" text-anchor="middle" font-size="7" font-weight="700" fill="#fff">N</text></g></svg></button>`;
+    d.querySelector('button').onclick = () => m.easeTo({bearing: 0, pitch: 0, duration: 400});
+    this.up = () => { d.querySelector('.nr').setAttribute('transform', `rotate(${-m.getBearing()} 15 15)`); d.classList.toggle('turned', Math.abs(m.getBearing()) > 0.5); };
+    m.on('rotate', this.up); this.up(); return d; }
+  onRemove() { this.m.off('rotate', this.up); this.el.remove(); }
+}
+map.addControl(new NorthControl(), 'top-right');
 map.addControl(new maplibregl.ScaleControl({unit: 'metric'}), 'bottom-right');
 const canvasImage = (draw, w = 28, h = 28) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); return c.getContext('2d').getImageData(0, 0, w, h); };
 const ICONS = {   // plan-legend symbols: [draw, w, h, legend svg]
@@ -577,7 +593,7 @@ async function mapIdle(ms = 20000) {   // wait until tiles and images are drawn
   await new Promise(r => { let done = false; const fin = () => { if (!done) { done = true; r(); } }; map.once('idle', fin); map.triggerRepaint(); setTimeout(fin, ms); });
   await nextFrame();
 }
-const grab = () => new Promise(r => { map.once('render', () => r(map.getCanvas().toDataURL('image/jpeg', 0.95))); map.triggerRepaint(); });
+const grab = (q = 0.95) => new Promise(r => { map.once('render', () => r(map.getCanvas().toDataURL('image/jpeg', q))); map.triggerRepaint(); });
 const loadScript = src => new Promise(ok => { const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = ok; document.head.appendChild(sc); });   // missing file: carry on without it
 function niceScale(mPerMm) {   // scale bar of about 40 mm, with a round length
   const target = 40 * mPerMm, p = Math.pow(10, Math.floor(Math.log10(target))), len = [1, 2, 5, 10].map(x => x * p).filter(x => x <= target).pop();
@@ -592,11 +608,16 @@ async function mapPdf(o) {
   const keep = {mapon: new Set(MAPON), imgon: new Set(IMGON), sel: SEL, center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pr: map.getPixelRatio(), css: $('map').style.cssText,
     opac: Object.fromEntries(Object.keys(D.images).map(m => [m, map.getPaintProperty('img-' + m, 'raster-opacity')]))};
   const pages = [], areasIn = [...new Set(rows.map(r => r.area))], swapped = [], hdBase = ['imagery', 'hybrid'].includes($('base').value);
-  if (!SNAP) await Promise.all(areasIn.filter(a => !window.PRINTIMG?.[a]).map(a => loadScript(a + '/print.js')));   // full-resolution plan images (app/<area>/print.js)
+  if (!SNAP) await Promise.all(areasIn.filter(a => !window.PRINTIMG?.[a]).map(a => loadScript(a + '/print.js')));
+  const NAMES = ['roads', 'places', 'roadshd', 'placeshd'], firstProj = LIDS.find(([, k]) => !CLS[k].context)?.[0];
+  const order = map.getStyle().layers.map(l => l.id), namesBefore = order[order.indexOf('placeshd') + 1];   // the layer just above the name layers   // full-resolution plan images (app/<area>/print.js)
   try {
     // only the plans printed get the full-resolution image (a hidden one would still be loading when restored)
     for (const m of maps) { const hd = window.PRINTIMG?.[m.area]?.[m.id.split(':')[1]]; if (hd && D.images[m.id]) { map.getSource('img-' + m.id).updateImage({url: hd.img, coordinates: hd.coords}); swapped.push(m.id); } }
-    if (hdBase) { vis('imageryhd', true); vis('imagery', false); }
+    if (hdBase) { vis('imageryhd', true); vis('imagery', false); }   // imagery one zoom level deeper; in high resolution the extra goes to the street names (two levels deeper imagery filled the tile queue and the names never loaded)
+    if (o.hires && $('base').value === 'hybrid') { vis('roads', false); vis('places', false); vis('roadshd', true); vis('placeshd', true); }
+    // street and place names go above the printed plans (still under the projects), so a plan drawn over the map does not hide them
+    if ($('base').value === 'hybrid' && firstProj) NAMES.forEach(id => map.moveLayer(id, firstProj));
     // print style (owner, 2026-11-13): filter shapes bold and on top – areas and line buffers as bold cyan-on-dark outlines; a line's
     // centre line is left out so it does not cover the project inside its buffer; light fill. Larger project labels.
     const POLY = ['==', ['geometry-type'], 'Polygon'];
@@ -610,21 +631,23 @@ async function mapPdf(o) {
     map.getSource('f').setData({type: 'FeatureCollection', features: D.features});
     map.setLayoutProperty('labels', 'text-field', ['coalesce', ['get', 'plabel'], ['get', 'project_id']]);
     map.setLayoutProperty('labels', 'text-variable-anchor', ['top', 'bottom', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right']); map.setLayoutProperty('labels', 'text-radial-offset', 1.1);
-    select(null); $('map').style.cssText += `;position:fixed;left:0;top:0;width:${pxW}px;height:${pxH}px;z-index:-1`; map.setPixelRatio(2); map.resize();
+    select(null); $('map').style.cssText += `;position:fixed;left:0;top:0;width:${pxW}px;height:${pxH}px;z-index:-1`; map.setPixelRatio(o.hires ? 4 : 2); map.resize();
     for (const g of groups) {
       const ids = new Set(g.map(m => m.id)), rs = rows.filter(r => ids.has(r.map));
       MAPON.clear(); g.forEach(m => MAPON.add(m.id)); IMGON.clear(); if (o.printed) g.forEach(m => D.images[m.id] && IMGON.add(m.id));
       g.forEach(m => D.images[m.id] && map.setPaintProperty('img-' + m.id, 'raster-opacity', 1 - o.transp / 100));
       applyVis();
       const fs = rs.flatMap(r => FBYKEY[r.key] || []).concat(SHAPES.map(x => x.area)), b = bboxOf(fs);
-      map.fitBounds([[b[0], b[1]], [b[2], b[3]]], {padding: {top: 80, right: 80, bottom: 130, left: 80}, duration: 0, bearing: 0}); await mapIdle(); await mapIdle(4000);   // more room at the bottom for the scale bar
-      const img = await grab(), lat = map.getCenter().lat, mPerPx = 40075016.686 * Math.cos(lat * Math.PI / 180) / (512 * Math.pow(2, map.getZoom()));
+      map.fitBounds([[b[0], b[1]], [b[2], b[3]]], {padding: {top: 80, right: 80, bottom: 130, left: 80}, duration: 0, bearing: keep.bearing}); await mapIdle(o.hires ? 60000 : 20000); await mapIdle(4000);   // keeps the map's rotation; more room at the bottom for the scale bar
+      const img = await grab(o.hires ? 0.9 : 0.95), bearing = map.getBearing(), lat = map.getCenter().lat, mPerPx = 40075016.686 * Math.cos(lat * Math.PI / 180) / (512 * Math.pow(2, map.getZoom()));
       const mPerMm = mPerPx * pxW / fw, cls = [...new Set(rs.flatMap(r => (FBYKEY[r.key] || []).map(f => f.properties.cls)))].filter(k => CLS[k] && classShown(k));
-      pages.push({g, rs, img, mPerMm, cls, scale: Math.round(mPerMm * 1000 / 500) * 500});
+      pages.push({g, rs, img, mPerMm, cls, bearing, scale: Math.round(mPerMm * 1000 / 500) * 500});
     }
   } finally {
     swapped.forEach(id => map.getSource('img-' + id).updateImage({url: D.images[id].img, coordinates: D.images[id].coords}));
-    if (hdBase) { vis('imageryhd', false); vis('imagery', true); }
+    if (hdBase) { vis('imageryhd', false); vis('imageryuhd', false); vis('imagery', true); }
+    if (o.hires && $('base').value === 'hybrid') { vis('roadshd', false); vis('placeshd', false); vis('roads', true); vis('places', true); }
+    if ($('base').value === 'hybrid' && firstProj) NAMES.forEach(id => map.moveLayer(id, namesBefore));   // back where they were, under the printed plans
     map.setFilter('drawn-case', ['!', ['has', 'buf']]); map.setFilter('drawn-line', ['!', ['has', 'buf']]); map.setLayoutProperty('drawn-buf', 'visibility', 'visible'); map.setPaintProperty('drawn-fill', 'fill-opacity', .16);
     map.setLayoutProperty('labels', 'text-size', 11); map.setPaintProperty('labels', 'text-halo-width', 2);
     DRAWN.forEach(id => map.moveLayer(id));   // back to the screen order: drawn shapes above the labels
@@ -652,7 +675,7 @@ async function mapPdf(o) {
   const html = pages.map((p, i) => { const sb = niceScale(p.mPerMm);
     return `<section class="pp" style="width:${pg.w}mm;height:${pg.h}mm">${head1(o.title, `${plans} · ${p.g.map(m => m.title).join(' + ')}`, i + 1)}
     <div class="pb"><div class="mf" style="width:${fw}mm;height:${fh}mm"><img src="${p.img}">
-      <div class="na"><svg width="26" height="34" viewBox="0 0 26 34"><path d="M13 2 L22 26 L13 21 L4 26 Z" fill="#17222b" stroke="#fff" stroke-width="1.2"/><text x="13" y="33" text-anchor="middle" font-size="8" font-weight="700" fill="#17222b" stroke="#fff" stroke-width=".5">N</text></svg></div>
+      <div class="na"><svg width="30" height="34" viewBox="0 0 30 34"><g transform="rotate(${-(p.bearing || 0)} 15 17)"><path d="M15 2 L24 26 L15 21 L6 26 Z" fill="#17222b" stroke="#fff" stroke-width="1.2"/><text x="15" y="33" text-anchor="middle" font-size="8" font-weight="700" fill="#17222b" stroke="#fff" stroke-width=".5">N</text></g></svg></div>
       <div class="sb"><div class="bar" style="width:${sb.mm}mm"></div><span>0</span><span style="margin-left:${sb.mm - 3}mm">${sb.label}</span><em>about 1:${p.scale.toLocaleString('en-AU')} at ${PAPER[o.paper].label}</em></div></div>
       <aside class="ps" style="width:${side}mm;height:${fh}mm">${legend(p)}${plist(p)}${flt ? `<h3>Filter</h3><p>${esc(flt)}</p>` : ''}</aside></div>${footer}</section>`; }).join('');
   const cost = r => r.area === 'croskell' ? 'cost_to_icp_aud' : 'cost_to_mca_aud';
@@ -680,6 +703,7 @@ $('bPdf').onclick = () => {
     <p class="fit">A printable map of the <b>${rows.length} rows shown</b> (${maps.length} plan map${maps.length > 1 ? 's' : ''}), with your drawn shapes, on the basemap chosen now (<b>${esc($('base').selectedOptions[0].text)}</b>), and a table of the rows. The matching Excel file is saved at the same time; keep both in one folder.</p>
     <div class="grid"><label class="w">Title<input id="pT" placeholder="e.g. Casey Fields Boulevard – Thompsons Road to Linsell Boulevard"></label>
     <label>Map reference<input id="pR" value="Map 1"></label><label>Paper<select id="pP"><option value="a3">A3 landscape</option><option value="a4">A4 landscape</option></select></label>
+    <label class="w">Resolution<select id="pQ"><option value="std">Standard – smaller file</option><option value="hi">High – zoom into the PDF to read street names (larger file, slower)</option></select></label>
     <label class="w" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="pM" ${maps.length > 1 ? 'checked' : ''} style="width:auto"> One page per plan map (printed plans do not overlap)</label>
     <label class="w" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="pC" style="width:auto"> Costs and levy component in the table page</label>
     <label class="w" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="pI" checked style="width:auto"> Printed plan underneath, <input id="pTr" type="number" min="0" max="95" step="5" value="${tr}" style="width:64px"> % transparent</label></div>
@@ -690,7 +714,7 @@ $('bPdf').onclick = () => {
     const slug = (ref + ' ' + title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 110), baseName = `${slug}-${new Date().toISOString().slice(0, 10)}`;
     $('pMsg').textContent = 'Drawing the map… (a few seconds per page)'; $('pGo').disabled = true;
     try {
-      const o = {title, ref, base: baseName, paper: $('pP').value, perMap: $('pM').checked, printed: $('pI').checked, costs: $('pC').checked, transp: Math.min(95, Math.max(0, +$('pTr').value || 0))};
+      const o = {title, ref, base: baseName, paper: $('pP').value, hires: $('pQ').value === 'hi', perMap: $('pM').checked, printed: $('pI').checked, costs: $('pC').checked, transp: Math.min(95, Math.max(0, +$('pTr').value || 0))};
       await mapPdf(o);
       exportXlsx(rows, 'rows on ' + ref, {file: baseName + '.xlsx', map: `${ref} – ${title}`, pdf: baseName + '.pdf'});
       m.remove(); const t = document.title; document.title = baseName;   // the browser suggests the title as the PDF's file name

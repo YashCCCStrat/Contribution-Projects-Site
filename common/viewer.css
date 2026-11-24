@@ -192,3 +192,7 @@ body.snapshot #drawbar .sep, body.snapshot #drawbar .sep ~ .dl, body.snapshot #d
   .pt td{padding:1.3mm 1.6mm;border-bottom:.4pt solid #d6dde2;vertical-align:top}.pt td.d{width:150mm}.pt .n{text-align:right;white-space:nowrap}.pt .rid{font-size:6.8pt;color:#47555f}
   .nt{font-size:7.8pt;margin-top:3mm}.nt p{margin:0 0 1.5mm}
 }
+
+/* north indicator (turns with the map; click = north up) */
+.northctl button{width:34px!important;height:34px!important;padding:2px!important;display:flex;align-items:center;justify-content:center}
+.northctl.turned button{background:#fff4d6}
