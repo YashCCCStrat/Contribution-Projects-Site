@@ -656,11 +656,16 @@ async function mapPdf(o) {
       <div class="sb"><div class="bar" style="width:${sb.mm}mm"></div><span>0</span><span style="margin-left:${sb.mm - 3}mm">${sb.label}</span><em>about 1:${p.scale.toLocaleString('en-AU')} at ${PAPER[o.paper].label}</em></div></div>
       <aside class="ps" style="width:${side}mm;height:${fh}mm">${legend(p)}${plist(p)}${flt ? `<h3>Filter</h3><p>${esc(flt)}</p>` : ''}</aside></div>${footer}</section>`; }).join('');
   const cost = r => r.area === 'croskell' ? 'cost_to_icp_aud' : 'cost_to_mca_aud';
-  const twice = printedTwice(rows).map(([k, v]) => `<p><b>${esc(k)}:</b> ${esc(v)}</p>`).join('');
-  const table = `<section class="pp" style="width:${pg.w}mm;height:${pg.h}mm">${head1(o.title, 'Rows on the maps – figures as printed in the plan tables', npg)}
-    <table class="pt"><thead><tr><th>Project ID</th><th>Construction / land</th><th>Levy component</th><th>Table</th><th>Title</th><th>Land ha</th><th>Total cost</th><th>To ICP / MCA</th><th>Map page</th><th>Row ID (Excel)</th></tr></thead><tbody>
-    ${rows.map(r => `<tr><td><b>${esc(r.project_id)}</b></td><td>${esc(r.type || '')}</td><td>${esc(r.component || '')}</td><td>${esc(r.table || '')}</td><td>${esc(r.title || '')}</td><td class="n">${fig(r, 'land_ha')}</td><td class="n">${fig(r, 'total_cost_aud')}</td><td class="n">${fig(r, cost(r))}</td><td class="n">${pages.findIndex(p => p.rs.includes(r)) + 1}</td><td class="rid">${esc(r.rid.split(':').slice(1).join(':'))}</td></tr>`).join('')}</tbody></table>
-    <div class="nt">${twice}<p>${rows.length} rows${flt ? ' · filter: ' + esc(flt) : ''}. The Excel file <b>${esc(o.base)}.xlsx</b> has the same rows in the register layout, with every column on its Details sheet (Row ID).</p></div>${footer}</section>`;
+  const twice = o.costs ? printedTwice(rows).map(([k, v]) => `<p><b>${esc(k)}:</b> ${esc(v)}</p>`).join('') : '';
+  // table page columns; without costs (o.costs false): no levy component, total cost or cost to ICP / MCA
+  const TC = [['Project ID', r => `<b>${esc(r.project_id)}</b>`], ['Construction / land', r => esc(r.type || '')], ...(o.costs ? [['Levy component', r => esc(r.component || '')]] : []),
+    ['Table', r => esc(r.table || '')], ['Title', r => esc(r.title || '')], ['Land ha', r => fig(r, 'land_ha'), 'n'],
+    ...(o.costs ? [['Total cost', r => fig(r, 'total_cost_aud'), 'n'], ['To ICP / MCA', r => fig(r, cost(r)), 'n']] : []),
+    ['Map page', r => pages.findIndex(p => p.rs.includes(r)) + 1, 'n'], ['Row ID (Excel)', r => esc(r.rid.split(':').slice(1).join(':')), 'rid']];
+  const table = `<section class="pp" style="width:${pg.w}mm;height:${pg.h}mm">${head1(o.title, o.costs ? 'Rows on the maps – figures as printed in the plan tables' : 'Rows on the maps – as printed in the plan tables', npg)}
+    <table class="pt"><thead><tr>${TC.map(([h, , c]) => `<th${c === 'n' ? ' class="n"' : ''}>${h}</th>`).join('')}</tr></thead><tbody>
+    ${rows.map(r => '<tr>' + TC.map(([, f, c]) => `<td${c ? ` class="${c}"` : ''}>${f(r)}</td>`).join('') + '</tr>').join('')}</tbody></table>
+    <div class="nt">${twice}<p>${rows.length} rows${flt ? ' · filter: ' + esc(flt) : ''}. The Excel file <b>${esc(o.base)}.xlsx</b> has the same rows (Row ID).</p></div>${footer}</section>`;
   let po = $('printout'); if (!po) { po = document.createElement('div'); po.id = 'printout'; document.body.appendChild(po); }
   po.innerHTML = `<style>@page{size:${P.w}mm ${P.h}mm;margin:8mm}</style>` + html + table;
   await Promise.all([...po.querySelectorAll('img')].map(im => im.decode().catch(() => {})));
@@ -674,6 +679,7 @@ $('bPdf').onclick = () => {
     <div class="grid"><label class="w">Title<input id="pT" placeholder="e.g. Casey Fields Boulevard – Thompsons Road to Linsell Boulevard"></label>
     <label>Map reference<input id="pR" value="Map 1"></label><label>Paper<select id="pP"><option value="a3">A3 landscape</option><option value="a4">A4 landscape</option></select></label>
     <label class="w" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="pM" ${maps.length > 1 ? 'checked' : ''} style="width:auto"> One page per plan map (printed plans do not overlap)</label>
+    <label class="w" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="pC" style="width:auto"> Costs and levy component in the table page</label>
     <label class="w" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="pI" checked style="width:auto"> Printed plan underneath, <input id="pTr" type="number" min="0" max="95" step="5" value="${tr}" style="width:64px"> % transparent</label></div>
     <p class="fit" id="pMsg"></p><div class="actions" style="justify-content:flex-end"><button class="btn" id="pCancel">Cancel</button><button class="btn primary" id="pGo">Make PDF + Excel</button></div></div>`;
   document.body.appendChild(m); $('pCancel').onclick = () => m.remove(); $('pT').focus();
@@ -682,7 +688,7 @@ $('bPdf').onclick = () => {
     const slug = (ref + ' ' + title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 110), baseName = `${slug}-${new Date().toISOString().slice(0, 10)}`;
     $('pMsg').textContent = 'Drawing the map… (a few seconds per page)'; $('pGo').disabled = true;
     try {
-      const o = {title, ref, base: baseName, paper: $('pP').value, perMap: $('pM').checked, printed: $('pI').checked, transp: Math.min(95, Math.max(0, +$('pTr').value || 0))};
+      const o = {title, ref, base: baseName, paper: $('pP').value, perMap: $('pM').checked, printed: $('pI').checked, costs: $('pC').checked, transp: Math.min(95, Math.max(0, +$('pTr').value || 0))};
       await mapPdf(o);
       exportXlsx(rows, 'rows on ' + ref, {file: baseName + '.xlsx', map: `${ref} – ${title}`, pdf: baseName + '.pdf'});
       m.remove(); const t = document.title; document.title = baseName;   // the browser suggests the title as the PDF's file name
